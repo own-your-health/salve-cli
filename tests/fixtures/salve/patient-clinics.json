@@ -1,0 +1,12 @@
+{
+  "data": {
+    "clinics": [
+      {
+        "_id": "clinic-0001",
+        "name": "Example Fertility",
+        "fullsynccomplete": true,
+        "selected": true
+      }
+    ]
+  }
+}

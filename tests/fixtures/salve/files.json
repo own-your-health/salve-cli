@@ -1,0 +1,25 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "files": [
+        {
+          "id": "3001",
+          "name": "Lab results.pdf",
+          "uri": "files/3001.pdf",
+          "filetype": "pdf",
+          "sentdate": "2025-01-15T12:00:00.000Z",
+          "uuid": "uuid-3001"
+        },
+        {
+          "id": "3002",
+          "name": "Ultrasound.png",
+          "uri": "files/3002.png",
+          "filetype": "image/png",
+          "sentdate": "2025-01-20T10:00:00.000Z",
+          "uuid": "uuid-3002"
+        }
+      ]
+    }
+  }
+}

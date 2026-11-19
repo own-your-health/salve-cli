@@ -1,0 +1,52 @@
+[package]
+name = "salve-cli"
+description = "Unofficial read-only CLI for Salve, the fertility clinics' patient app: documents, files, messages, forms and video visits as health-records/v1."
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/piekstra/salve-cli"
+authors = ["piekstra"]
+publish = false
+
+[lib]
+name = "salve"
+path = "src/lib.rs"
+
+[[bin]]
+name = "salve"
+path = "src/main.rs"
+
+[dependencies]
+pk-cli-core = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2", features = ["reqwest"] }
+pk-cli-config = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
+pk-cli-selfupdate = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
+pk-cli-auth = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
+pk-cli-documents = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
+pk-cli-secrets = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
+# `auth login --browser`: Salve's own sign-in page in the profile's Chrome.
+pk-cli-browser = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
+pk-med-records = { git = "https://github.com/piekstra/medical-common", tag = "v0.6.2" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+base64 = "0.22"
+# Cognito's SRP sign-in, written here: big integers, SHA-256 and HMAC.
+num-bigint = "0.4"
+sha2 = "0.10"
+hmac = "0.12"
+getrandom = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "z"

@@ -1,0 +1,18 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "conversations": [
+        {
+          "id": 8001,
+          "preferredlanguagecode": "en",
+          "conversationtype": "Billing",
+          "conversationtypeid": 3,
+          "latest": {
+            "sent": "2025-03-02T10:00:00.000Z"
+          }
+        }
+      ]
+    }
+  }
+}

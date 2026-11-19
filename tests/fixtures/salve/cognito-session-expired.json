@@ -1,0 +1,4 @@
+{
+  "__type": "NotAuthorizedException",
+  "message": "Invalid session for the user, session is expired."
+}

@@ -1,0 +1,13 @@
+{
+  "data": {
+    "me": {
+      "email": "patient@example.com",
+      "name": "Jane Example",
+      "patientid": "100001"
+    },
+    "clinic": {
+      "_id": "clinic-0001",
+      "name": "Example Fertility"
+    }
+  }
+}

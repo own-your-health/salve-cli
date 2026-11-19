@@ -1,0 +1,9 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "firstname": "Jane",
+      "lastname": "Example"
+    }
+  }
+}

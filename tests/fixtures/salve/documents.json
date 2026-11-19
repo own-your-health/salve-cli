@@ -1,0 +1,27 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "documents": [
+        {
+          "id": "2001",
+          "name": "Consent form.pdf",
+          "uri": "documents/2001.pdf",
+          "readdate": "2025-02-04T08:00:00.000Z",
+          "filetype": "application/pdf",
+          "sentdate": "2025-02-03T15:04:05.000Z",
+          "uuid": "uuid-2001"
+        },
+        {
+          "id": 2002,
+          "name": "Treatment plan",
+          "uri": "documents/2002.pdf",
+          "readdate": null,
+          "filetype": "pdf",
+          "sentdate": "2024-11-01T09:00:00.000Z",
+          "uuid": "uuid-2002"
+        }
+      ]
+    }
+  }
+}

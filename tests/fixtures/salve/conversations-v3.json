@@ -1,0 +1,22 @@
+{
+  "data": {
+    "conversations": {
+      "records": [
+        {
+          "id": 7001,
+          "subject": "Medication question",
+          "isStarred": false,
+          "conversationStatus": "Open",
+          "conversationType": "Nursing",
+          "conversationFolder": {
+            "id": "1",
+            "name": "Inbox"
+          }
+        }
+      ]
+    },
+    "me": {
+      "id": "100001"
+    }
+  }
+}

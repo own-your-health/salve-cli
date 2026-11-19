@@ -1,0 +1,37 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "form": {
+        "id": "form-c",
+        "clinicid": "clinic-0001",
+        "patientformid": "4003",
+        "version": "1",
+        "name": "Partner details",
+        "type": "Intake",
+        "definition": {
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "partner",
+                  "title": "Partner's name"
+                }
+              ]
+            }
+          ]
+        },
+        "latestsubmission": {
+          "id": "sub-4003",
+          "version": "1",
+          "submission": {
+            "partner": "Example"
+          },
+          "issubmitted": false
+        }
+      }
+    }
+  }
+}

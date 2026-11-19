@@ -1,0 +1,56 @@
+{
+  "data": {
+    "conversationMessages": {
+      "cursor": null,
+      "records": [
+        {
+          "id": "7103",
+          "content": "Sent by mistake",
+          "sentDate": "2025-02-11T08:00:00.000Z",
+          "deletedDate": "2025-02-11T08:05:00.000Z",
+          "systemMessageType": null,
+          "uuid": "uuid-7103",
+          "actionedByPatientId": "100001",
+          "actionedByClinicUserId": null,
+          "attachments": [],
+          "patient": {
+            "id": "100001",
+            "firstName": "Jane",
+            "lastName": "Example"
+          },
+          "clinicUser": null
+        },
+        {
+          "id": "7104",
+          "content": "The conversation was closed",
+          "sentDate": "2025-02-11T09:00:00.000Z",
+          "deletedDate": null,
+          "systemMessageType": "ConversationClosed",
+          "uuid": "uuid-7104",
+          "actionedByPatientId": null,
+          "actionedByClinicUserId": null,
+          "attachments": [],
+          "patient": null,
+          "clinicUser": null
+        },
+        {
+          "id": "7105",
+          "content": "Let us know how it goes.",
+          "sentDate": "2025-02-12T10:00:00.000Z",
+          "deletedDate": null,
+          "systemMessageType": null,
+          "uuid": "uuid-7105",
+          "actionedByPatientId": null,
+          "actionedByClinicUserId": "201",
+          "attachments": [],
+          "patient": null,
+          "clinicUser": {
+            "id": "201",
+            "firstName": "Nurse",
+            "lastName": "Example"
+          }
+        }
+      ]
+    }
+  }
+}

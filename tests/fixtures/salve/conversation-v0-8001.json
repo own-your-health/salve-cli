@@ -1,0 +1,84 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "conversationV2": {
+        "conversationtype": "Billing",
+        "conversationtypeid": 3,
+        "id": 8001,
+        "isreadonly": false,
+        "preferredlanguagecode": "en",
+        "messages": [
+          {
+            "__typename": "MessageGroup",
+            "content": null,
+            "deleted": false,
+            "frompatient": false,
+            "read": true,
+            "sender": "Billing Example",
+            "sent": "2025-03-01T10:00:00.000Z",
+            "type": "group",
+            "uuid": "uuid-group-1",
+            "messages": [
+              {
+                "__typename": "Message",
+                "clinicuserid": "202",
+                "content": "Your invoice is attached.",
+                "deleted": false,
+                "frompatient": false,
+                "groupid": "uuid-group-1",
+                "id": "9001",
+                "metadata": [
+                  {
+                    "__typename": "MessageFileMetadata",
+                    "filename": "Invoice.pdf",
+                    "filetype": "application/pdf",
+                    "id": "9101",
+                    "type": "file",
+                    "url": "attachments/9101.pdf",
+                    "uuid": "uuid-9101"
+                  }
+                ],
+                "read": true,
+                "sender": "Billing Example",
+                "sent": "2025-03-01T10:00:00.000Z",
+                "type": "text",
+                "uuid": "uuid-9001"
+              }
+            ]
+          },
+          {
+            "__typename": "Message",
+            "clinicuserid": null,
+            "content": "Thank you, received.",
+            "deleted": false,
+            "frompatient": true,
+            "groupid": null,
+            "id": "9002",
+            "metadata": [],
+            "read": true,
+            "sender": "Jane Example",
+            "sent": "2025-03-02T10:00:00.000Z",
+            "type": "text",
+            "uuid": "uuid-9002"
+          },
+          {
+            "__typename": "Message",
+            "clinicuserid": null,
+            "content": "Removed",
+            "deleted": true,
+            "frompatient": true,
+            "groupid": null,
+            "id": "9003",
+            "metadata": [],
+            "read": true,
+            "sender": "Jane Example",
+            "sent": "2025-03-02T11:00:00.000Z",
+            "type": "text",
+            "uuid": "uuid-9003"
+          }
+        ]
+      }
+    }
+  }
+}

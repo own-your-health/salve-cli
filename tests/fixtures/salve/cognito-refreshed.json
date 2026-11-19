@@ -1,0 +1,9 @@
+{
+  "AuthenticationResult": {
+    "AccessToken": "{ACCESS}",
+    "ExpiresIn": 3600,
+    "IdToken": "{ID}",
+    "TokenType": "Bearer"
+  },
+  "ChallengeParameters": {}
+}

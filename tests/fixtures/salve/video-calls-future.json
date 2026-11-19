@@ -1,0 +1,23 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "videoCalls": [
+        {
+          "__typename": "VideoCall",
+          "id": "5003",
+          "name": "Video visit",
+          "host": "Dr Example",
+          "title": "Results review",
+          "description": "A video visit with the clinic",
+          "clinictimezone": "America/New_York",
+          "startdate": "2030-03-01T15:00:00.000Z",
+          "enddate": "2030-03-01T15:30:00.000Z",
+          "duration": 30,
+          "allowedduration": 30,
+          "ispartnerinvited": false
+        }
+      ]
+    }
+  }
+}

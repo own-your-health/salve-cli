@@ -1,0 +1,4 @@
+{
+  "__type": "UnsupportedOperationException",
+  "message": "Token revocation is not enabled for this app client."
+}

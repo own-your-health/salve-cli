@@ -1,0 +1,50 @@
+{
+  "data": {
+    "conversationMessages": {
+      "cursor": "cursor-2",
+      "records": [
+        {
+          "id": "7101",
+          "content": "Should I take the medication with food?",
+          "sentDate": "2025-02-10T09:00:00.000Z",
+          "deletedDate": null,
+          "systemMessageType": null,
+          "uuid": "uuid-7101",
+          "actionedByPatientId": "100001",
+          "actionedByClinicUserId": null,
+          "attachments": [],
+          "patient": {
+            "id": "100001",
+            "firstName": "Jane",
+            "lastName": "Example"
+          },
+          "clinicUser": null
+        },
+        {
+          "id": "7102",
+          "content": "Yes, with food. The instructions are attached.",
+          "sentDate": "2025-02-10T11:00:00.000Z",
+          "deletedDate": null,
+          "systemMessageType": null,
+          "uuid": "uuid-7102",
+          "actionedByPatientId": null,
+          "actionedByClinicUserId": "201",
+          "attachments": [
+            {
+              "fileName": "Instructions.pdf",
+              "fileType": "application/pdf",
+              "url": "attachments/7102a.pdf",
+              "uuid": "uuid-7102a"
+            }
+          ],
+          "patient": null,
+          "clinicUser": {
+            "id": "201",
+            "firstName": "Nurse",
+            "lastName": "Example"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+Cargo.lock.orig
+.DS_Store
+
+# Never commit real portal data: no downloaded files, report PDFs, portal
+# captures, HAR files or exports. Fixtures are synthetic
+# (tests/fixtures/README.md).
+/captures
+*.har
+*.raw.json
+*.raw.html
+*.pdf
+*.ndjson
