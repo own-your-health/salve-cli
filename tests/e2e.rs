@@ -678,6 +678,40 @@ fn a_long_conversation_is_read_a_full_page_at_a_time() {
 }
 
 #[test]
+fn a_conversation_of_exactly_two_full_pages_ends_on_the_empty_third() {
+    let h = H::new(Scenario {
+        long_conversation: Some(200),
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "exact", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["counts"]["Communication"], 200);
+    assert_eq!(h.count("patient GetConversationMessages"), 3);
+    assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
+}
+
+#[test]
+fn the_conversation_list_is_read_a_full_page_at_a_time() {
+    let h = H::new(Scenario {
+        more_conversations: Some(150),
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "many", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["counts"]["Communication"], 3);
+    // 151 conversations: a page of 100, then 51.
+    assert_eq!(h.count("patient GetConversations"), 2);
+    assert_eq!(h.count("patient GetConversationMessages"), 151);
+    assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
+}
+
+#[test]
 fn a_conversation_salve_fails_costs_only_its_own_messages() {
     let h = H::new(Scenario {
         broken_conversation: true,

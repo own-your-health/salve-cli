@@ -13,7 +13,7 @@
 //! `no-mfa`, `v0-messaging`, `patient-api-fails`, `files-fail`, `bad-pdf`,
 //! `missing-file`, `short-tokens`, `refresh-revoked`, `revoke-unsupported`,
 //! `awaiting-sync`, `sync-after=N`, `broken-conversation`,
-//! `long-conversation=N`, `expire-after=N`.
+//! `long-conversation=N`, `more-conversations=N`, `expire-after=N`.
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -36,14 +36,16 @@ fn main() {
             "broken-conversation" => scenario.broken_conversation = true,
             other => {
                 let count = |prefix: &str| other.strip_prefix(prefix).map(str::parse::<usize>);
-                match (
+                match [
                     count("expire-after="),
                     count("sync-after="),
                     count("long-conversation="),
-                ) {
-                    (Some(Ok(n)), _, _) => scenario.expire_after = Some(n),
-                    (_, Some(Ok(n)), _) => scenario.sync_after = Some(n),
-                    (_, _, Some(Ok(n))) => scenario.long_conversation = Some(n),
+                    count("more-conversations="),
+                ] {
+                    [Some(Ok(n)), ..] => scenario.expire_after = Some(n),
+                    [_, Some(Ok(n)), ..] => scenario.sync_after = Some(n),
+                    [_, _, Some(Ok(n)), _] => scenario.long_conversation = Some(n),
+                    [.., Some(Ok(n))] => scenario.more_conversations = Some(n),
                     _ => {
                         eprintln!("unknown STUB_SCENARIO case `{other}`");
                         std::process::exit(2);

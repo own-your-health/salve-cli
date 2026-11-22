@@ -211,7 +211,8 @@ new code identity, and macOS asks before it reads an item another build
 made). `STUB_SCENARIO` (`no-mfa`, `v0-messaging`, `patient-api-fails`,
 `files-fail`, `bad-pdf`, `missing-file`, `short-tokens`, `refresh-revoked`,
 `revoke-unsupported`, `awaiting-sync`, `sync-after=N`,
-`broken-conversation`, `long-conversation=N`, `expire-after=N`) makes it
+`broken-conversation`, `long-conversation=N`, `more-conversations=N`,
+`expire-after=N`) makes it
 answer the
 way the tests' cases do.
 

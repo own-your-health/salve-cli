@@ -86,6 +86,8 @@ pub struct Scenario {
     pub long_conversation: Option<usize>,
     /// A second conversation, whose messages Salve fails to fetch.
     pub broken_conversation: bool,
+    /// This many more conversations, each with no messages.
+    pub more_conversations: Option<usize>,
     /// The account answers `AwaitingSync` (HTTP 412, as Salve does) to
     /// this many reads of the patient and clinic, then its records.
     pub sync_after: Option<usize>,
@@ -596,6 +598,12 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
                 broken["subject"] = json!("Broken conversation");
                 records.push(broken);
             }
+            for i in 0..scenario.more_conversations.unwrap_or(0) {
+                let mut more = records[0].clone();
+                more["id"] = json!(7500 + i);
+                more["subject"] = json!(format!("Synthetic conversation {i}"));
+                records.push(more);
+            }
             match page(records, vars, "conversations") {
                 Some(answer) => {
                     list["data"]["conversations"] = answer;
@@ -628,6 +636,16 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
                 None => (200, fixture("messages-v3-failed.json")),
             }
         }
+        ("patient", "GetConversationMessages")
+            if vars["conversationId"]
+                .as_i64()
+                .is_some_and(|id| (7500..7500 + scenario.more_conversations.unwrap_or(0) as i64).contains(&id)) =>
+        {
+            match page(Vec::new(), vars, "messages") {
+                Some(answer) => (200, json!({ "data": { "conversationMessages": answer } }).to_string()),
+                None => (200, fixture("messages-v3-failed.json")),
+            }
+        }
         ("patient", "GetConversationMessages") => (200, fixture("messages-v3-failed.json")),
         // `salve api` sends no operation name.
         ("app", "-") if document.contains("patientid") => ok("patient-id.json"),
@@ -636,18 +654,24 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
 }
 
 /// One page of a list, as Salve pages it: `limit` records from the
-/// `cursor` (the whole list without a limit), always with a cursor for the
-/// next page. A cursor past the end fails, as Salve's does: `None`.
+/// `cursor`, with a cursor for the next page; a cursor at the end answers an
+/// empty page and no cursor. Without a limit the whole list is one page, and
+/// the cursor it answers fails when sent back, as Salve's does: `None`.
 fn page(records: Vec<Value>, vars: &Value, list: &str) -> Option<Value> {
     let from = match vars["cursor"].as_str() {
         None => 0,
         Some(c) => c.strip_prefix(&format!("{list}-"))?.parse::<usize>().ok()?,
     };
-    if from > 0 && from >= records.len() {
+    if from > records.len() {
         return None;
     }
-    let limit = vars["limit"].as_u64().map_or(records.len(), |l| l as usize);
-    let to = (from + limit).min(records.len());
+    if from == records.len() && from > 0 {
+        return Some(json!({ "cursor": null, "records": [] }));
+    }
+    let Some(limit) = vars["limit"].as_u64() else {
+        return Some(json!({ "cursor": format!("{list}-unlimited"), "records": records }));
+    };
+    let to = (from + limit as usize).min(records.len());
     Some(json!({ "cursor": format!("{list}-{to}"), "records": records[from..to].to_vec() }))
 }
 
