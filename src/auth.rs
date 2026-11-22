@@ -4,8 +4,8 @@
 //!
 //! The sign-in proves the password to Cognito (SRP; it is never sent),
 //! then Salve texts a code. At a terminal salve asks for it; otherwise the
-//! waiting sign-in is parked in the vault and `auth login --code <CODE>`
-//! finishes it, within about 3 minutes. What is kept is Cognito's tokens:
+//! waiting sign-in is parked in the vault and `auth login --code -`, the
+//! code on stdin, finishes it, within about 3 minutes. What is kept is Cognito's tokens:
 //! the refresh token renews the others without a password or a code until
 //! it lapses or is revoked.
 //!
@@ -735,7 +735,8 @@ mod tests {
     #[test]
     fn a_refused_codes_message_drops_the_shared_flows_retry_command() {
         // The wording of pk_cli_auth::otp's refusal, which names the command
-        // without the profile.
+        // without the profile and with the code in argv; salve never shows
+        // that part.
         let shared = "the code was refused: Invalid code received for user — 2 more attempts before the waiting login is discarded; retry with `salve auth login --code <CODE>`";
         assert_eq!(
             without_retry(shared),

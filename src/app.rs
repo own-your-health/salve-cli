@@ -240,7 +240,7 @@ fn dispatch(ctx: &Ctx) -> Result<(), CliError> {
                     required: true,
                     method: "password".into(),
                     login_hint: Some(format!(
-                        "{BIN} auth login --profile <NAME> --op-item op://VAULT/ITEM (or --stdin, or --browser), then the texted code on stdin: --code -"
+                        "{BIN} auth login --profile <NAME> --op-item op://VAULT/ITEM (or --stdin, or --browser), then printf '%s' <CODE> | {BIN} auth login --profile <NAME> --code -"
                     )),
                 },
                 &[

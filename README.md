@@ -203,7 +203,7 @@ export XDG_CONFIG_HOME=$(mktemp -d) SALVE_KEYCHAIN_SERVICE=piekstra.salve.stub-$
 export SALVE_STUB_URL=<address>
 salve profiles add test
 printf '%s\n' patient@example.com right-password | salve auth login --profile test --stdin
-salve auth login --profile test --code 123456
+printf '%s' 123456 | salve auth login --profile test --code -
 ```
 
 The scratch service holds a vault key while you try it: `salve auth reset
