@@ -81,6 +81,9 @@ pub struct Scenario {
     pub revoke_unsupported: bool,
     /// The account answers `errorCode: AwaitingSync`.
     pub awaiting_sync: bool,
+    /// The account answers `AwaitingSync` (HTTP 412, as Salve does) to
+    /// this many reads of the patient and clinic, then its records.
+    pub sync_after: Option<usize>,
 }
 
 #[derive(Default)]
@@ -105,6 +108,8 @@ struct State {
     /// or any credential to the file host.
     leaks: Vec<String>,
     mutations: usize,
+    /// Reads of the patient and clinic so far.
+    account_reads: usize,
 }
 
 pub struct Stub {
@@ -537,6 +542,15 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
     let ok = |name: &str| (200, fixture(name));
     match (host, op.as_str()) {
         ("app", "GetPatientAndClinic") if scenario.awaiting_sync => (200, fixture("account-awaiting-sync.json")),
+        ("app", "GetPatientAndClinic")
+            if scenario.sync_after.is_some_and(|n| {
+                let mut s = state.lock().unwrap();
+                s.account_reads += 1;
+                s.account_reads <= n
+            }) =>
+        {
+            (412, fixture("account-awaiting-sync.json"))
+        }
         ("app", "GetPatientAndClinic") => ok("patient-and-clinic.json"),
         ("app", "GetPatientId") => ok("patient-id.json"),
         ("app", "GetPatientClinics") => ok("patient-clinics.json"),

@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/piekstra/salve-cli"
+repository = "https://github.com/own-your-health/salve-cli"
 authors = ["piekstra"]
 publish = false
 
@@ -26,7 +26,7 @@ pk-cli-documents = { git = "https://github.com/piekstra/cli-common", tag = "v0.3
 pk-cli-secrets = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
 # `auth login --browser`: Salve's own sign-in page in the profile's Chrome.
 pk-cli-browser = { git = "https://github.com/piekstra/cli-common", tag = "v0.33.2" }
-pk-med-records = { git = "https://github.com/piekstra/medical-common", tag = "v0.6.2" }
+pk-med-records = { git = "https://github.com/own-your-health/medical-common", tag = "v0.6.2" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"

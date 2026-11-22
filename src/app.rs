@@ -61,7 +61,7 @@ impl Env<'_> {
     }
 }
 
-const REPO: &str = "piekstra/salve-cli";
+const REPO: &str = "own-your-health/salve-cli";
 /// `info`'s profiles: health-records/v1 and documents/v1.
 pub const PROFILES: &[&str] = &[pk_med_records::PROFILE, pk_cli_documents::PROFILE];
 /// The organization's vendor: the app the clinics use.

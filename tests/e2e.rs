@@ -659,6 +659,24 @@ fn an_account_salve_has_not_finished_setting_up_stores_nothing() {
 }
 
 #[test]
+fn a_sign_in_waits_while_salve_brings_the_clinics_records_in() {
+    let h = H::new(Scenario {
+        sync_after: Some(3),
+        ..Scenario::default()
+    });
+    assert_eq!(h.run(&["profiles", "add", "adult1"]), 0);
+    assert_eq!(
+        h.run(&["auth", "login", "--profile", "adult1", "--from-env", SIGN_IN_VAR]),
+        3
+    );
+    assert_eq!(h.run(&["auth", "login", "--profile", "adult1", "--code", CODE]), 0);
+    let reads = h.stub.log().iter().filter(|l| *l == "app GetPatientAndClinic").count();
+    assert_eq!(reads, 4, "three answered AwaitingSync, the fourth the records");
+    assert_eq!(h.stub.codes_sent(), 1, "one code, however long the wait");
+    assert!(h.store().get(&h.key("adult1")).unwrap().is_some());
+}
+
+#[test]
 fn a_sign_out_salve_does_not_confirm_still_removes_the_sign_in() {
     let h = H::new(Scenario {
         revoke_unsupported: true,

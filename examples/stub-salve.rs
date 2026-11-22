@@ -12,7 +12,7 @@
 //! `STUB_SCENARIO` takes a comma-separated list of the cases the tests use:
 //! `no-mfa`, `v0-messaging`, `patient-api-fails`, `files-fail`, `bad-pdf`,
 //! `missing-file`, `short-tokens`, `refresh-revoked`, `revoke-unsupported`,
-//! `awaiting-sync`, `expire-after=N`.
+//! `awaiting-sync`, `sync-after=N`, `expire-after=N`.
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -32,6 +32,7 @@ fn main() {
             "refresh-revoked" => scenario.refresh_revoked = true,
             "revoke-unsupported" => scenario.revoke_unsupported = true,
             "awaiting-sync" => scenario.awaiting_sync = true,
+            s if s.starts_with("sync-after=") => scenario.sync_after = s["sync-after=".len()..].parse().ok(),
             other => match other.strip_prefix("expire-after=").map(str::parse) {
                 Some(Ok(n)) => scenario.expire_after = Some(n),
                 _ => {

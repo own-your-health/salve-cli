@@ -193,12 +193,20 @@ pub fn token_refused() -> CliError {
     CliError::Auth("Salve refused the stored sign-in token".into()).because(Reason::CredentialRefused)
 }
 
+const AWAITING_SYNC: &str = "is waiting for the clinic's records to reach Salve";
+
+/// Salve is still bringing the clinic's records in: its web app shows a
+/// "syncing" page and reads the account again until they arrive.
+pub fn is_awaiting_sync(e: &CliError) -> bool {
+    e.is_auth() && e.message().contains(AWAITING_SYNC)
+}
+
 /// The app API's own error codes, answered in place of `data`.
 fn account_step(code: &str) -> Option<&'static str> {
     match code {
         "Unregistered" => Some("is not registered with a clinic yet"),
         "AwaitingDetails" => Some("is waiting on details the patient gives in Salve's app"),
-        "AwaitingSync" => Some("is waiting for the clinic's records to reach Salve"),
+        "AwaitingSync" => Some(AWAITING_SYNC),
         _ => None,
     }
 }

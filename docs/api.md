@@ -9,10 +9,12 @@ the way the app does.
 
 Everything below was read from the web app's code (build
 `SLwjbRWPWnATD9snq-Tbr`, downloaded 2026-11-19) and from two unauthenticated
-probes of Cognito and the APIs, except where it says otherwise. No signed-in
-traffic had been recorded when salve was written. The first real sign-in
-confirms the shapes; `tests/fixture_shapes.rs` pins what salve expects, so a
-difference shows there first.
+probes of Cognito and the APIs, except where it says otherwise. The first
+real sign-in confirmed the sign-in: the SRP proof, the texted
+code and the tokens, and the app API's `AwaitingSync` answer for an account
+whose clinic had not finished linking it (below). The records' shapes are
+the web app's until a real export reads them; `tests/fixture_shapes.rs` pins
+what salve expects, so a difference shows there first.
 
 ## Route
 
@@ -196,6 +198,13 @@ published; a `QuestionnaireResponse` would mean guessing it.
   only**, from the ID token's claim; the app API never gets it.
 - **Errors arrive under HTTP 200**, as `data: null` beside `errors`, or as
   `errorCode` in place of `data`. salve reads the body, not the status.
+- **`AwaitingSync` is HTTP 412** with `{"errorCode": "AwaitingSync"}`, and
+  it is a state of the account, not a failed request: the clinic has not
+  finished linking the patient. Salve's web app shows a "syncing" page that
+  reads `GetPatientAndClinic` every 2 seconds until the clinic is there, and
+  sends nothing to start the sync. A sign-in reads it every 3 seconds for up
+  to 3 minutes the same way, then stops and keeps nothing. On the first real
+  sign-in it did not clear in those 3 minutes.
 - **Renewal answers no refresh token.** The one from the sign-in is kept
   until it lapses or is revoked. A token that worked and is then refused is
   renewed once; a token refused right after its renewal means the sign-in
