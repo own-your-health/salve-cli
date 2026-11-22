@@ -253,10 +253,7 @@ pub fn login(
                             parked.sent_to_hint.as_deref().unwrap_or("the account's phone")
                         )
                     } else {
-                        // A refused code's message ends with the retry
-                        // command; the remedy below says it with the profile.
-                        let m = e.message();
-                        m.split_once("; retry with").map_or(m, |(said, _)| said).to_string()
+                        without_retry(e.message()).to_string()
                     };
                     CliError::Auth(message)
                         .because(e.reason().unwrap_or(Reason::CredentialRefused))
@@ -312,7 +309,6 @@ pub fn login(
     Ok(LoggedIn { settings })
 }
 
-/// What a new sign-in reads about the account: the patient and the clinic.
 /// How long a sign-in waits for Salve to bring the clinic's records in,
 /// and how often it reads the account meanwhile. Salve's web app shows a
 /// "syncing" page that reads it every 2 seconds for as long as it is open.
@@ -365,6 +361,7 @@ fn patient_and_clinic(
     }
 }
 
+/// What a new sign-in reads about the account: the patient and the clinic.
 fn read_account(endpoints: &Endpoints, t: Tokens, now: u64, quiet: bool) -> Result<Session, CliError> {
     let refresh = t
         .refresh_token
@@ -418,6 +415,12 @@ fn read_account(endpoints: &Endpoints, t: Tokens, now: u64, quiet: bool) -> Resu
         stub: endpoints.stub.clone(),
         signed_in_at: crate::app::now_rfc3339(),
     })
+}
+
+/// A refused code's message from the shared login flow, without the retry
+/// command it ends with: the remedy says that, with the profile.
+fn without_retry(message: &str) -> &str {
+    message.split_once("; retry with").map_or(message, |(said, _)| said)
 }
 
 /// The two 1Password references an item names: its `username` and
@@ -727,6 +730,18 @@ pub fn reset(force: bool, interactive: bool, env: &Env, json: bool, quiet: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_codes_message_drops_the_shared_flows_retry_command() {
+        // The wording of pk_cli_auth::otp's refusal, which names the command
+        // without the profile.
+        let shared = "the code was refused: Invalid code received for user — 2 more attempts before the waiting login is discarded; retry with `salve auth login --code <CODE>`";
+        assert_eq!(
+            without_retry(shared),
+            "the code was refused: Invalid code received for user — 2 more attempts before the waiting login is discarded"
+        );
+        assert_eq!(without_retry("Salve refused the code"), "Salve refused the code");
+    }
 
     #[test]
     fn the_sign_in_reads_two_lines_and_never_quotes_them() {

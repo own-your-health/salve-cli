@@ -370,6 +370,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_account_still_syncing_is_told_apart_from_other_refusals() {
+        // The sign-in's wait depends on this; a reworded message must not
+        // turn it back into an immediate failure.
+        let syncing = answer("GetPatientAndClinic", 412, json!({ "errorCode": "AwaitingSync" })).unwrap_err();
+        assert!(is_awaiting_sync(&syncing));
+        assert_eq!(syncing.exit_code(), 3);
+        for other in ["Unregistered", "AwaitingDetails"] {
+            let e = answer("GetPatientAndClinic", 412, json!({ "errorCode": other })).unwrap_err();
+            assert!(!is_awaiting_sync(&e), "{other}");
+        }
+        assert!(!is_awaiting_sync(&token_refused()));
+    }
+
+    #[test]
     fn only_queries_are_sent() {
         for ok in [
             "{ me { patientid } }",

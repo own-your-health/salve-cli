@@ -116,7 +116,7 @@ pub const CONVERSATIONS_V3: Op = Op {
     name: "GetConversations",
     host: Host::Patient,
     document: "query GetConversations($cursor: String, $limit: Int, $language: String) { conversations(cursor: \
-               $cursor, limit: $limit, language: $language) { records { id subject isStarred conversationStatus \
+               $cursor, limit: $limit, language: $language) { cursor records { id subject isStarred conversationStatus \
                conversationType conversationFolder { id name } } } me { id } }",
 };
 

@@ -659,6 +659,47 @@ fn an_account_salve_has_not_finished_setting_up_stores_nothing() {
 }
 
 #[test]
+fn a_long_conversation_is_read_a_full_page_at_a_time() {
+    let h = H::new(Scenario {
+        long_conversation: Some(230),
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "long", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["complete"], true);
+    assert_eq!(trailer["counts"]["Communication"], 230);
+    // 100, 100, then 30: the short page ends it, and its cursor is not
+    // followed (Salve fails a request past the end).
+    assert_eq!(h.count("patient GetConversationMessages"), 3);
+    assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
+}
+
+#[test]
+fn a_conversation_salve_fails_costs_only_its_own_messages() {
+    let h = H::new(Scenario {
+        broken_conversation: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "broken", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["complete"], true);
+    assert_eq!(trailer["counts"]["Communication"], 3);
+    assert_eq!(
+        skips(trailer),
+        vec![(
+            "upstream".to_string(),
+            "GetConversationMessages?conversationId=7009".to_string()
+        )]
+    );
+}
+
+#[test]
 fn a_sign_in_waits_while_salve_brings_the_clinics_records_in() {
     let h = H::new(Scenario {
         sync_after: Some(3),

@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "message": "Failed to fetch conversation messages",
+      "path": [
+        "conversationMessages"
+      ]
+    }
+  ],
+  "data": null
+}

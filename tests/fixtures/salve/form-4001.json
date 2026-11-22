@@ -5,8 +5,8 @@
       "form": {
         "id": "form-a",
         "clinicid": "clinic-0001",
-        "patientformid": "4001",
-        "version": "2",
+        "patientformid": 4001,
+        "version": 2,
         "name": "Medical history",
         "type": "Intake",
         "definition": {
@@ -30,7 +30,7 @@
         },
         "latestsubmission": {
           "id": "sub-4001",
-          "version": "2",
+          "version": 2,
           "submission": {
             "allergies": "None",
             "smoker": false

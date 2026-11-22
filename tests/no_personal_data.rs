@@ -272,6 +272,7 @@ fn the_scanner_flags_real_shapes_and_passes_dummies() {
         "record 7342918",
         "a short hex run 9a7342918b",
         "bad1234567",
+        "a digit run that is no digest 12345678901234567890123456789012",
     ] {
         assert!(!scan_line(real).is_empty(), "missed: {real}");
     }

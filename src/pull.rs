@@ -39,7 +39,9 @@ pub trait Reader {
 /// Video visits per page, and pages read each way at most.
 const VIDEO_PAGE: i64 = 50;
 const VIDEO_PAGES: i64 = 20;
-/// Message pages read per conversation at most.
+/// Conversations or messages asked for per page, and pages read of each
+/// list at most. Without a limit Salve answers the whole list as one page.
+const MESSAGE_PAGE: i64 = 100;
 const MESSAGE_PAGES: usize = 50;
 
 /// A file Salve serves: what `documents list` shows and the address that
@@ -94,55 +96,107 @@ pub enum Messaging {
     V0(Vec<(i64, Option<String>, Vec<MessageV0>)>),
 }
 
-/// The patient's conversations and their messages, from the messaging that
-/// has them; skipped pages are said in `capped`.
-pub fn messaging(r: &dyn Reader) -> Result<(Messaging, Vec<String>), CliError> {
-    let mut capped = Vec::new();
-    let v3 = r.query(&queries::CONVERSATIONS_V3, &json!({}));
-    let v3_list = match v3 {
-        Ok(a) => {
-            let list: ConversationsV3 = model::read(a.data, "conversations")?;
-            list.conversations.map(|c| c.records).unwrap_or_default()
+/// A part of the messages that was not read: the search, the skip code and
+/// why.
+pub type Gap = (String, &'static str, String);
+
+/// Pages of a cursor-paged list: each page asks for [`MESSAGE_PAGE`], and
+/// the cursor is followed only after a full page. Salve answers every page
+/// with a cursor, and a request past the end fails, so a short page is the
+/// end. `Err` is a page that failed, with what was read before it.
+fn pages<T, F>(mut read: F, key: impl Fn(&T) -> Option<String>) -> (Vec<T>, Option<(usize, CliError)>, bool)
+where
+    F: FnMut(Option<&str>) -> Result<model::Records<T>, CliError>,
+{
+    let mut all = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut cursor: Option<String> = None;
+    for page in 1..=MESSAGE_PAGES {
+        let got = match read(cursor.as_deref()) {
+            Ok(got) => got,
+            Err(e) => return (all, Some((page, e)), false),
+        };
+        let full = got.records.len() as i64 >= MESSAGE_PAGE;
+        let before = seen.len();
+        for t in got.records {
+            if key(&t).is_none_or(|k| seen.insert(k)) {
+                all.push(t);
+            }
         }
-        Err(e) if e.is_auth() => return Err(e),
-        Err(_) => Vec::new(),
-    };
+        let next = got.cursor.filter(|c| !c.is_empty() && Some(c) != cursor.as_ref());
+        if !full || next.is_none() || seen.len() == before {
+            return (all, None, false);
+        }
+        cursor = next;
+    }
+    (all, None, true)
+}
+
+/// The patient's conversations and their messages, from the messaging that
+/// has them, and what of them was not read.
+pub fn messaging(r: &dyn Reader) -> Result<(Messaging, Vec<Gap>), CliError> {
+    let mut gaps: Vec<Gap> = Vec::new();
+    let (v3_list, failed, capped) = pages(
+        |cursor| {
+            let mut vars = json!({ "limit": MESSAGE_PAGE });
+            if let Some(c) = cursor {
+                vars["cursor"] = json!(c);
+            }
+            let a = r.query(&queries::CONVERSATIONS_V3, &vars)?;
+            Ok(model::read::<ConversationsV3>(a.data, "conversations")?
+                .conversations
+                .unwrap_or_default())
+        },
+        |c: &model::ConversationV3| c.id.map(|i| i.to_string()),
+    );
+    match failed {
+        Some((_, e)) if e.is_auth() => return Err(e),
+        // The newer messaging failing outright: the first may hold them.
+        Some((1, _)) => {}
+        Some((page, e)) => gaps.push((
+            format!("GetConversations?page={page}"),
+            skip::UPSTREAM,
+            e.message().to_string(),
+        )),
+        None => {}
+    }
+    if capped {
+        gaps.push((
+            "GetConversations".into(),
+            skip::PAGE_CAP,
+            format!("pages past {MESSAGE_PAGES} were left"),
+        ));
+    }
     if !v3_list.is_empty() {
         let mut out = Vec::new();
         for c in v3_list {
             let Some(id) = c.id else { continue };
-            let mut messages = Vec::new();
-            let mut seen = BTreeSet::new();
-            let mut cursor: Option<String> = None;
-            let mut pages = 0;
-            loop {
-                let mut vars = json!({ "conversationId": id });
-                if let Some(cur) = &cursor {
-                    vars["cursor"] = json!(cur);
-                }
-                let a = r.query(&queries::MESSAGES_V3, &vars)?;
-                let page: MessagesV3 = model::read(a.data, "messages")?;
-                let page = page.conversation_messages.unwrap_or_default();
-                let before = seen.len();
-                for m in page.records {
-                    if m.id.as_ref().is_none_or(|i| seen.insert(i.clone())) {
-                        messages.push(m);
+            let (messages, failed, capped) = pages(
+                |cursor| {
+                    let mut vars = json!({ "conversationId": id, "limit": MESSAGE_PAGE });
+                    if let Some(c) = cursor {
+                        vars["cursor"] = json!(c);
                     }
-                }
-                pages += 1;
-                let next = page.cursor.filter(|c| !c.is_empty() && Some(c) != cursor.as_ref());
-                if next.is_none() || seen.len() == before {
-                    break;
-                }
-                if pages >= MESSAGE_PAGES {
-                    capped.push(format!("conversation {id}"));
-                    break;
-                }
-                cursor = next;
+                    let a = r.query(&queries::MESSAGES_V3, &vars)?;
+                    Ok(model::read::<MessagesV3>(a.data, "messages")?
+                        .conversation_messages
+                        .unwrap_or_default())
+                },
+                |m: &MessageV3| m.id.clone(),
+            );
+            let search = format!("GetConversationMessages?conversationId={id}");
+            match failed {
+                Some((_, e)) if e.is_auth() => return Err(e),
+                // One conversation that fails costs its own messages only.
+                Some((_, e)) => gaps.push((search.clone(), skip::UPSTREAM, e.message().to_string())),
+                None => {}
+            }
+            if capped {
+                gaps.push((search, skip::PAGE_CAP, format!("pages past {MESSAGE_PAGES} were left")));
             }
             out.push((c, messages));
         }
-        return Ok((Messaging::V3(out), capped));
+        return Ok((Messaging::V3(out), gaps));
     }
     let a = r.query(&queries::CONVERSATIONS_V0, &json!({}))?;
     let list: ConversationsV0 = model::read(a.data, "conversations")?;
@@ -158,7 +212,7 @@ pub fn messaging(r: &dyn Reader) -> Result<(Messaging, Vec<String>), CliError> {
         }
         out.push((id, detail.conversationtype.or(c.conversationtype), flat));
     }
-    Ok((Messaging::V0(out), capped))
+    Ok((Messaging::V0(out), gaps))
 }
 
 /// A message group's messages, or the message itself.
@@ -438,7 +492,11 @@ fn write_all<W: Write>(
                 {
                     continue;
                 }
-                let input = json!({ "input": { "id": id, "patientformid": pfid, "version": version } });
+                // Salve's FormInput takes the two numbers as integers; the
+                // list answers them as integers too.
+                let number = |s: &str| s.parse::<i64>().map_or_else(|_| json!(s), |n| json!(n));
+                let input =
+                    json!({ "input": { "id": id, "patientformid": number(&pfid), "version": number(&version) } });
                 let form = match r.query(&queries::FORM, &input) {
                     Ok(a) => model::read::<FormAnswer>(a.data, "a form")?.me.and_then(|m| m.form),
                     Err(e) => {
@@ -470,13 +528,9 @@ fn write_all<W: Write>(
 
     // Messages, with their attachments.
     match messaging(r) {
-        Ok((m, capped)) => {
-            for c in capped {
-                w.skip(Skip::search(
-                    format!("GetConversationMessages?{c}"),
-                    skip::PAGE_CAP,
-                    format!("pages past {MESSAGE_PAGES} were left"),
-                ));
+        Ok((m, gaps)) => {
+            for (search, code, why) in gaps {
+                w.skip(Skip::search(search, code, why));
             }
             write_messages(r, w, since, ctx, who, m, tally)?;
         }

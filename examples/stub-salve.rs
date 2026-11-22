@@ -12,7 +12,8 @@
 //! `STUB_SCENARIO` takes a comma-separated list of the cases the tests use:
 //! `no-mfa`, `v0-messaging`, `patient-api-fails`, `files-fail`, `bad-pdf`,
 //! `missing-file`, `short-tokens`, `refresh-revoked`, `revoke-unsupported`,
-//! `awaiting-sync`, `sync-after=N`, `expire-after=N`.
+//! `awaiting-sync`, `sync-after=N`, `broken-conversation`,
+//! `long-conversation=N`, `expire-after=N`.
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -32,14 +33,23 @@ fn main() {
             "refresh-revoked" => scenario.refresh_revoked = true,
             "revoke-unsupported" => scenario.revoke_unsupported = true,
             "awaiting-sync" => scenario.awaiting_sync = true,
-            s if s.starts_with("sync-after=") => scenario.sync_after = s["sync-after=".len()..].parse().ok(),
-            other => match other.strip_prefix("expire-after=").map(str::parse) {
-                Some(Ok(n)) => scenario.expire_after = Some(n),
-                _ => {
-                    eprintln!("unknown STUB_SCENARIO case `{other}`");
-                    std::process::exit(2);
+            "broken-conversation" => scenario.broken_conversation = true,
+            other => {
+                let count = |prefix: &str| other.strip_prefix(prefix).map(str::parse::<usize>);
+                match (
+                    count("expire-after="),
+                    count("sync-after="),
+                    count("long-conversation="),
+                ) {
+                    (Some(Ok(n)), _, _) => scenario.expire_after = Some(n),
+                    (_, Some(Ok(n)), _) => scenario.sync_after = Some(n),
+                    (_, _, Some(Ok(n))) => scenario.long_conversation = Some(n),
+                    _ => {
+                        eprintln!("unknown STUB_SCENARIO case `{other}`");
+                        std::process::exit(2);
+                    }
                 }
-            },
+            }
         }
     }
     let stub = common::Stub::start(scenario);
