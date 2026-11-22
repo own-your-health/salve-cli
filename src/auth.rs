@@ -4,8 +4,8 @@
 //!
 //! The sign-in proves the password to Cognito (SRP; it is never sent),
 //! then Salve texts a code. At a terminal salve asks for it; otherwise the
-//! waiting sign-in is parked in the vault and `auth login --code <CODE>`
-//! finishes it, within about 3 minutes. What is kept is Cognito's tokens:
+//! waiting sign-in is parked in the vault and `auth login --code -`, the
+//! code on stdin, finishes it, within about 3 minutes. What is kept is Cognito's tokens:
 //! the refresh token renews the others without a password or a code until
 //! it lapses or is revoked.
 //!
@@ -229,14 +229,15 @@ pub fn login(
     };
     let cognito = Cognito::new(&endpoints)?;
     let slot = store.slot(profile);
-    let finish_code =
-        |waiting: Option<(Secret, String, Option<String>)>, code: Option<&OtpCode>| -> Result<Tokens, CliError> {
-            let transport = SmsTransport {
-                cognito: &cognito,
-                endpoints: &endpoints,
-                waiting,
-            };
-            OtpLogin::new(BIN, &transport, &slot)
+    let finish_code = |waiting: Option<(Secret, String, Option<String>)>,
+                       code: Option<&OtpCode>|
+     -> Result<Tokens, CliError> {
+        let transport = SmsTransport {
+            cognito: &cognito,
+            endpoints: &endpoints,
+            waiting,
+        };
+        OtpLogin::new(BIN, &transport, &slot)
                 .interactive(interactive)
                 .quiet(quiet)
                 .max_age_secs(CODE_WINDOW_SECS)
@@ -258,10 +259,10 @@ pub fn login(
                     CliError::Auth(message)
                         .because(e.reason().unwrap_or(Reason::CredentialRefused))
                         .with_remedy(format!(
-                            "{BIN} auth login --profile {profile} --code <CODE>, within about 3 minutes of the text"
+                            "printf '%s' <CODE> | {BIN} auth login --profile {profile} --code -, within about 3 minutes of the text"
                         ))
                 })
-        };
+    };
     let now = crate::live::unix_now();
     let tokens = match source {
         Source::Code(code) => finish_code(None, Some(&code))?,
@@ -734,7 +735,8 @@ mod tests {
     #[test]
     fn a_refused_codes_message_drops_the_shared_flows_retry_command() {
         // The wording of pk_cli_auth::otp's refusal, which names the command
-        // without the profile.
+        // without the profile and with the code in argv; salve never shows
+        // that part.
         let shared = "the code was refused: Invalid code received for user — 2 more attempts before the waiting login is discarded; retry with `salve auth login --code <CODE>`";
         assert_eq!(
             without_retry(shared),
