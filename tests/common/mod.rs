@@ -81,6 +81,16 @@ pub struct Scenario {
     pub revoke_unsupported: bool,
     /// The account answers `errorCode: AwaitingSync`.
     pub awaiting_sync: bool,
+    /// The conversation's messages are this many synthetic ones, read a
+    /// page at a time.
+    pub long_conversation: Option<usize>,
+    /// A second conversation, whose messages Salve fails to fetch.
+    pub broken_conversation: bool,
+    /// This many more conversations, each with no messages.
+    pub more_conversations: Option<usize>,
+    /// The account answers `AwaitingSync` (HTTP 412, as Salve does) to
+    /// this many reads of the patient and clinic, then its records.
+    pub sync_after: Option<usize>,
 }
 
 #[derive(Default)]
@@ -105,6 +115,8 @@ struct State {
     /// or any credential to the file host.
     leaks: Vec<String>,
     mutations: usize,
+    /// Reads of the patient and clinic so far.
+    account_reads: usize,
 }
 
 pub struct Stub {
@@ -537,6 +549,15 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
     let ok = |name: &str| (200, fixture(name));
     match (host, op.as_str()) {
         ("app", "GetPatientAndClinic") if scenario.awaiting_sync => (200, fixture("account-awaiting-sync.json")),
+        ("app", "GetPatientAndClinic")
+            if scenario.sync_after.is_some_and(|n| {
+                let mut s = state.lock().unwrap();
+                s.account_reads += 1;
+                s.account_reads <= n
+            }) =>
+        {
+            (412, fixture("account-awaiting-sync.json"))
+        }
         ("app", "GetPatientAndClinic") => ok("patient-and-clinic.json"),
         ("app", "GetPatientId") => ok("patient-id.json"),
         ("app", "GetPatientClinics") => ok("patient-clinics.json"),
@@ -544,9 +565,11 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
         ("app", "GetFiles") if scenario.files_fail => ok("graphql-error.json"),
         ("app", "GetFiles") => ok("files.json"),
         ("app", "GetForms") => ok("forms.json"),
-        ("app", "GetForm") => match vars["input"]["patientformid"].as_str() {
-            Some("4001") => ok("form-4001.json"),
-            Some("4003") => ok("form-4003.json"),
+        // FormInput takes integers; a string is refused, as Salve does.
+        ("app", "GetForm") if vars["input"]["patientformid"].is_string() => (400, fixture("form-input-not-int.json")),
+        ("app", "GetForm") => match vars["input"]["patientformid"].as_i64() {
+            Some(4001) => ok("form-4001.json"),
+            Some(4003) => ok("form-4003.json"),
             _ => ok("form-not-found.json"),
         },
         ("app", "GetVideoCalls") => {
@@ -563,18 +586,93 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
         ("app", "FetchConversations") => ok("conversations-v0.json"),
         ("app", "GetConversation") if vars["conversationId"].as_i64() == Some(8001) => ok("conversation-v0-8001.json"),
         ("patient", "GetConversations") if scenario.v0_messaging => ok("conversations-v3-empty.json"),
-        ("patient", "GetConversations") => ok("conversations-v3.json"),
-        ("patient", "GetConversationMessages") if vars["conversationId"].as_i64() == Some(7001) => {
-            match vars["cursor"].as_str() {
-                None => ok("messages-v3-7001-page1.json"),
-                Some("cursor-2") => ok("messages-v3-7001-page2.json"),
-                Some(_) => (400, fixture("graphql-unknown.json")),
+        ("patient", "GetConversations") => {
+            let mut list: Value = serde_json::from_str(&fixture("conversations-v3.json")).unwrap();
+            let mut records = list["data"]["conversations"]["records"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if scenario.broken_conversation {
+                let mut broken = records[0].clone();
+                broken["id"] = json!(7009);
+                broken["subject"] = json!("Broken conversation");
+                records.push(broken);
+            }
+            for i in 0..scenario.more_conversations.unwrap_or(0) {
+                let mut more = records[0].clone();
+                more["id"] = json!(7500 + i);
+                more["subject"] = json!(format!("Synthetic conversation {i}"));
+                records.push(more);
+            }
+            match page(records, vars, "conversations") {
+                Some(answer) => {
+                    list["data"]["conversations"] = answer;
+                    (200, list.to_string())
+                }
+                None => (200, fixture("messages-v3-failed.json")),
             }
         }
+        ("patient", "GetConversationMessages") if vars["conversationId"].as_i64() == Some(7001) => {
+            let records: Vec<Value> = match scenario.long_conversation {
+                Some(n) => (0..n)
+                    .map(|i| {
+                        json!({ "id": format!("m{i}"), "content": format!("Synthetic message {i}"),
+                            "sentDate": "2025-03-01T09:00:00.000Z", "deletedDate": null, "systemMessageType": null,
+                            "uuid": format!("uuid-m{i}"), "actionedByPatientId": null, "actionedByClinicUserId": "200001",
+                            "attachments": [], "patient": null,
+                            "clinicUser": { "id": "200001", "firstName": "Nurse", "lastName": "Example" } })
+                    })
+                    .collect(),
+                None => ["messages-v3-7001-page1.json", "messages-v3-7001-page2.json"]
+                    .iter()
+                    .flat_map(|f| {
+                        let v: Value = serde_json::from_str(&fixture(f)).unwrap();
+                        v["data"]["conversationMessages"]["records"].as_array().cloned().unwrap_or_default()
+                    })
+                    .collect(),
+            };
+            match page(records, vars, "messages") {
+                Some(answer) => (200, json!({ "data": { "conversationMessages": answer } }).to_string()),
+                None => (200, fixture("messages-v3-failed.json")),
+            }
+        }
+        ("patient", "GetConversationMessages")
+            if vars["conversationId"]
+                .as_i64()
+                .is_some_and(|id| (7500..7500 + scenario.more_conversations.unwrap_or(0) as i64).contains(&id)) =>
+        {
+            match page(Vec::new(), vars, "messages") {
+                Some(answer) => (200, json!({ "data": { "conversationMessages": answer } }).to_string()),
+                None => (200, fixture("messages-v3-failed.json")),
+            }
+        }
+        ("patient", "GetConversationMessages") => (200, fixture("messages-v3-failed.json")),
         // `salve api` sends no operation name.
         ("app", "-") if document.contains("patientid") => ok("patient-id.json"),
         _ => (400, fixture("graphql-unknown.json")),
     }
+}
+
+/// One page of a list, as Salve pages it: `limit` records from the
+/// `cursor`, with a cursor for the next page; a cursor at the end answers an
+/// empty page and no cursor. Without a limit the whole list is one page, and
+/// the cursor it answers fails when sent back, as Salve's does: `None`.
+fn page(records: Vec<Value>, vars: &Value, list: &str) -> Option<Value> {
+    let from = match vars["cursor"].as_str() {
+        None => 0,
+        Some(c) => c.strip_prefix(&format!("{list}-"))?.parse::<usize>().ok()?,
+    };
+    if from > records.len() {
+        return None;
+    }
+    if from == records.len() && from > 0 {
+        return Some(json!({ "cursor": null, "records": [] }));
+    }
+    let Some(limit) = vars["limit"].as_u64() else {
+        return Some(json!({ "cursor": format!("{list}-unlimited"), "records": records }));
+    };
+    let to = (from + limit as usize).min(records.len());
+    Some(json!({ "cursor": format!("{list}-{to}"), "records": records[from..to].to_vec() }))
 }
 
 fn serve(stream: TcpStream, port: u16, state: &Mutex<State>, scenario: &Scenario) -> std::io::Result<()> {

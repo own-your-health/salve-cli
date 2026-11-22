@@ -9,10 +9,14 @@ the way the app does.
 
 Everything below was read from the web app's code (build
 `SLwjbRWPWnATD9snq-Tbr`, downloaded 2026-11-19) and from two unauthenticated
-probes of Cognito and the APIs, except where it says otherwise. No signed-in
-traffic had been recorded when salve was written. The first real sign-in
-confirms the shapes; `tests/fixture_shapes.rs` pins what salve expects, so a
-difference shows there first.
+probes of Cognito and the APIs, except where it says otherwise. The first
+real sign-in confirmed the sign-in: the SRP proof, the texted
+code and the tokens, and the app API's `AwaitingSync` answer for an account
+whose clinic had not finished linking it (below). A real export then read
+every list below, and corrected two things the code alone had not shown: the
+form's numbers are integers, and how the message lists page (both in Traps).
+`tests/fixture_shapes.rs` pins what salve expects, so a difference shows
+there first.
 
 ## Route
 
@@ -125,8 +129,8 @@ client-only `@client` fields.
 | `GetForms` | app | none | the forms assigned: `id patientformid version name type progressStatus` (`Complete`, `InProgress`, `NotStarted`) |
 | `GetForm` | app | `input: {id, patientformid, version}` | one form's `definition` and `latestsubmission {submission issubmitted}` |
 | `GetVideoCalls` | app | `input: {date, order, dateOperator, page, size}`: `LTE` with `DESC` for past visits, `GTE` with `ASC` for coming ones | `... on VideoCall {id title host startdate enddate duration}` |
-| `GetConversations` | patient | none | the newer messaging's conversations |
-| `GetConversationMessages` | patient | `conversationId`, `cursor` | a page of messages, and the next page's `cursor` |
+| `GetConversations` | patient | `limit`, `cursor` | a page of the newer messaging's conversations, and the next page's `cursor` |
+| `GetConversationMessages` | patient | `conversationId`, `limit`, `cursor` | a page of messages, and the next page's `cursor` |
 | `FetchConversations` | app | none | the first messaging's conversations |
 | `GetConversation` | app | `conversationId` | `conversationV2`: its messages, some in `MessageGroup`s, files as `MessageFileMetadata` |
 
@@ -196,6 +200,24 @@ published; a `QuestionnaireResponse` would mean guessing it.
   only**, from the ID token's claim; the app API never gets it.
 - **Errors arrive under HTTP 200**, as `data: null` beside `errors`, or as
   `errorCode` in place of `data`. salve reads the body, not the status.
+- **`AwaitingSync` is HTTP 412** with `{"errorCode": "AwaitingSync"}`, and
+  it is a state of the account, not a failed request: the clinic has not
+  finished linking the patient. Salve's web app shows a "syncing" page that
+  reads `GetPatientAndClinic` every 2 seconds until the clinic is there, and
+  sends nothing to start the sync. A sign-in reads it every 3 seconds for up
+  to 3 minutes the same way, then stops and keeps nothing. On the first real
+  sign-in it did not clear in those 3 minutes.
+- **A list comes whole without a limit, and its cursor then points past the
+  end.** `conversations` and `conversationMessages` answer every page with a
+  cursor, and the cursor from a page asked for without a limit fails when
+  sent back ("Failed to fetch conversation messages"). With a limit, the
+  cursor at the end answers an empty page and no cursor. salve asks for 100
+  a page and follows the cursor only after a full page; a short or empty
+  page is the end. One
+  conversation that fails is a skip for that conversation only.
+- **`FormInput` takes `patientformid` and `version` as integers**, as the
+  form list answers them; a string is refused ("Int cannot represent
+  non-integer value").
 - **Renewal answers no refresh token.** The one from the sign-in is kept
   until it lapses or is revoked. A token that worked and is then refused is
   renewed once; a token refused right after its renewal means the sign-in

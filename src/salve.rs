@@ -193,12 +193,20 @@ pub fn token_refused() -> CliError {
     CliError::Auth("Salve refused the stored sign-in token".into()).because(Reason::CredentialRefused)
 }
 
+const AWAITING_SYNC: &str = "is waiting for the clinic's records to reach Salve";
+
+/// Salve is still bringing the clinic's records in: its web app shows a
+/// "syncing" page and reads the account again until they arrive.
+pub fn is_awaiting_sync(e: &CliError) -> bool {
+    e.is_auth() && e.message().contains(AWAITING_SYNC)
+}
+
 /// The app API's own error codes, answered in place of `data`.
 fn account_step(code: &str) -> Option<&'static str> {
     match code {
         "Unregistered" => Some("is not registered with a clinic yet"),
         "AwaitingDetails" => Some("is waiting on details the patient gives in Salve's app"),
-        "AwaitingSync" => Some("is waiting for the clinic's records to reach Salve"),
+        "AwaitingSync" => Some(AWAITING_SYNC),
         _ => None,
     }
 }
@@ -360,6 +368,20 @@ pub fn check_read(document: &str) -> Result<(), CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_account_still_syncing_is_told_apart_from_other_refusals() {
+        // The sign-in's wait depends on this; a reworded message must not
+        // turn it back into an immediate failure.
+        let syncing = answer("GetPatientAndClinic", 412, json!({ "errorCode": "AwaitingSync" })).unwrap_err();
+        assert!(is_awaiting_sync(&syncing));
+        assert_eq!(syncing.exit_code(), 3);
+        for other in ["Unregistered", "AwaitingDetails"] {
+            let e = answer("GetPatientAndClinic", 412, json!({ "errorCode": other })).unwrap_err();
+            assert!(!is_awaiting_sync(&e), "{other}");
+        }
+        assert!(!is_awaiting_sync(&token_refused()));
+    }
 
     #[test]
     fn only_queries_are_sent() {

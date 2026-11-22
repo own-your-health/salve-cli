@@ -659,6 +659,99 @@ fn an_account_salve_has_not_finished_setting_up_stores_nothing() {
 }
 
 #[test]
+fn a_long_conversation_is_read_a_full_page_at_a_time() {
+    let h = H::new(Scenario {
+        long_conversation: Some(230),
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "long", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["complete"], true);
+    assert_eq!(trailer["counts"]["Communication"], 230);
+    // 100, 100, then 30: the short page ends it, and its cursor is not
+    // followed (Salve fails a request past the end).
+    assert_eq!(h.count("patient GetConversationMessages"), 3);
+    assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
+}
+
+#[test]
+fn a_conversation_of_exactly_two_full_pages_ends_on_the_empty_third() {
+    let h = H::new(Scenario {
+        long_conversation: Some(200),
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "exact", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["counts"]["Communication"], 200);
+    assert_eq!(h.count("patient GetConversationMessages"), 3);
+    assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
+}
+
+#[test]
+fn the_conversation_list_is_read_a_full_page_at_a_time() {
+    let h = H::new(Scenario {
+        more_conversations: Some(150),
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "many", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["counts"]["Communication"], 3);
+    // 151 conversations: a page of 100, then 51.
+    assert_eq!(h.count("patient GetConversations"), 2);
+    assert_eq!(h.count("patient GetConversationMessages"), 151);
+    assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
+}
+
+#[test]
+fn a_conversation_salve_fails_costs_only_its_own_messages() {
+    let h = H::new(Scenario {
+        broken_conversation: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    let (code, out) = h.export("adult1", "broken", &[]);
+    assert_eq!(code, 0);
+    let stream = lines(&out.join("records.ndjson"));
+    let trailer = stream.last().unwrap();
+    assert_eq!(trailer["complete"], true);
+    assert_eq!(trailer["counts"]["Communication"], 3);
+    assert_eq!(
+        skips(trailer),
+        vec![(
+            "upstream".to_string(),
+            "GetConversationMessages?conversationId=7009".to_string()
+        )]
+    );
+}
+
+#[test]
+fn a_sign_in_waits_while_salve_brings_the_clinics_records_in() {
+    let h = H::new(Scenario {
+        sync_after: Some(3),
+        ..Scenario::default()
+    });
+    assert_eq!(h.run(&["profiles", "add", "adult1"]), 0);
+    assert_eq!(
+        h.run(&["auth", "login", "--profile", "adult1", "--from-env", SIGN_IN_VAR]),
+        3
+    );
+    assert_eq!(h.run(&["auth", "login", "--profile", "adult1", "--code", CODE]), 0);
+    let reads = h.stub.log().iter().filter(|l| *l == "app GetPatientAndClinic").count();
+    assert_eq!(reads, 4, "three answered AwaitingSync, the fourth the records");
+    assert_eq!(h.stub.codes_sent(), 1, "one code, however long the wait");
+    assert!(h.store().get(&h.key("adult1")).unwrap().is_some());
+}
+
+#[test]
 fn a_sign_out_salve_does_not_confirm_still_removes_the_sign_in() {
     let h = H::new(Scenario {
         revoke_unsupported: true,

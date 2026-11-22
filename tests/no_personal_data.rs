@@ -58,15 +58,16 @@ fn is_dummy_number(n: &str) -> bool {
 
 const PUBLIC_EMAIL_DOMAINS: &[&str] = &["example.com"];
 
-/// The personal-data shapes on one line, each as `kind value`.
-/// The line with every hex token of 32 characters or more blanked: a hash,
-/// a key or a published constant (the SRP group's prime), never a phone
-/// number or a record id.
+/// The line with every hex token of 32 characters or more that holds a
+/// letter blanked: a hash, a key or a published constant (the SRP group's
+/// prime), never a phone number or a record id.
 fn without_hex(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut token = String::new();
     let flush = |token: &mut String, out: &mut String| {
-        if token.len() >= 32 {
+        // A digest or key: 32 or more hex digits with a letter among them.
+        // A run of digits alone is scanned as digits.
+        if token.len() >= 32 && token.chars().any(|c| c.is_ascii_alphabetic()) {
             out.extend(std::iter::repeat_n('x', token.len()));
         } else {
             out.push_str(token);
@@ -85,6 +86,7 @@ fn without_hex(line: &str) -> String {
     out
 }
 
+/// The personal-data shapes on one line, each as `kind value`.
 fn scan_line(line: &str) -> Vec<String> {
     let line = &without_hex(line);
     let mut findings = Vec::new();
@@ -269,6 +271,8 @@ fn the_scanner_flags_real_shapes_and_passes_dummies() {
         "lives at 1234 NW Oak St, Somewhere",
         "record 7342918",
         "a short hex run 9a7342918b",
+        "bad1234567",
+        "a digit run that is no digest 12345678901234567890123456789012",
     ] {
         assert!(!scan_line(real).is_empty(), "missed: {real}");
     }
@@ -279,6 +283,7 @@ fn the_scanner_flags_real_shapes_and_passes_dummies() {
         "user@example.com",
         "100 Example St, Example City",
         "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74",
+        "GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
     ] {
         assert!(
             scan_line(dummy).is_empty(),

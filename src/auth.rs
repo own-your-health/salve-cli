@@ -253,7 +253,7 @@ pub fn login(
                             parked.sent_to_hint.as_deref().unwrap_or("the account's phone")
                         )
                     } else {
-                        e.message().to_string()
+                        without_retry(e.message()).to_string()
                     };
                     CliError::Auth(message)
                         .because(e.reason().unwrap_or(Reason::CredentialRefused))
@@ -285,7 +285,7 @@ pub fn login(
         }
         Source::Browser => browser_tokens(profile, &endpoints, cmd.browser.fresh_profile, env.hermetic, quiet)?,
     };
-    let session = read_account(&endpoints, tokens, now)?;
+    let session = read_account(&endpoints, tokens, now, quiet)?;
     let settings = LoginSettings {
         clinic_id: Some(session.clinic_id.clone()),
         clinic: session.clinic_name.clone(),
@@ -309,8 +309,60 @@ pub fn login(
     Ok(LoggedIn { settings })
 }
 
+/// How long a sign-in waits for Salve to bring the clinic's records in,
+/// and how often it reads the account meanwhile. Salve's web app shows a
+/// "syncing" page that reads it every 2 seconds for as long as it is open.
+fn sync_wait(endpoints: &Endpoints) -> (std::time::Duration, std::time::Duration) {
+    use std::time::Duration;
+    if endpoints.is_stub() {
+        (Duration::from_secs(2), Duration::from_millis(20))
+    } else {
+        (Duration::from_secs(180), Duration::from_secs(3))
+    }
+}
+
+/// The patient and clinic, read again while Salve answers that it is
+/// still bringing the clinic's records in.
+fn patient_and_clinic(
+    api: &Api,
+    endpoints: &Endpoints,
+    id_token: &Secret,
+    clinic_token: Option<&str>,
+    quiet: bool,
+) -> Result<salve::Answer, CliError> {
+    let (limit, every) = sync_wait(endpoints);
+    let started = std::time::Instant::now();
+    let mut said = false;
+    loop {
+        match salve::op_query(api, &queries::PATIENT_AND_CLINIC, &json!({}), id_token, clinic_token) {
+            Err(e) if salve::is_awaiting_sync(&e) && started.elapsed() < limit => {
+                if !said && !quiet {
+                    eprintln!(
+                        "Salve is bringing the clinic's records in; waiting up to {} minutes, as its app does",
+                        limit.as_secs().div_ceil(60)
+                    );
+                }
+                said = true;
+                std::thread::sleep(every);
+            }
+            Err(e) if salve::is_awaiting_sync(&e) => {
+                return Err(CliError::Auth(format!(
+                    "{} after {} minutes of waiting (Salve's app shows its \"syncing\" page)",
+                    e.message(),
+                    limit.as_secs().div_ceil(60)
+                ))
+                .because(Reason::Forbidden)
+                .with_remedy(format!(
+                    "the clinic links the account in Salve; sign in again later (it texts a new code): {BIN} auth login --profile <NAME> ..."
+                )))
+            }
+            other => return other,
+        }
+    }
+}
+
 /// What a new sign-in reads about the account: the patient and the clinic.
-fn read_account(endpoints: &Endpoints, t: Tokens, now: u64) -> Result<Session, CliError> {
+fn read_account(endpoints: &Endpoints, t: Tokens, now: u64, quiet: bool) -> Result<Session, CliError> {
     let refresh = t
         .refresh_token
         .as_ref()
@@ -319,13 +371,7 @@ fn read_account(endpoints: &Endpoints, t: Tokens, now: u64) -> Result<Session, C
     let api = Api::new(endpoints)?;
     let claims = session::claims(t.id_token.expose()).unwrap_or(Value::Null);
     let clinic_token = claims["custom:clinictoken"].as_str().map(str::to_string);
-    let a = salve::op_query(
-        &api,
-        &queries::PATIENT_AND_CLINIC,
-        &json!({}),
-        &t.id_token,
-        clinic_token.as_deref(),
-    )?;
+    let a = patient_and_clinic(&api, endpoints, &t.id_token, clinic_token.as_deref(), quiet)?;
     let pc: PatientAndClinic = model::read(a.data, "the patient and clinic")?;
     let names = salve::op_query(
         &api,
@@ -369,6 +415,12 @@ fn read_account(endpoints: &Endpoints, t: Tokens, now: u64) -> Result<Session, C
         stub: endpoints.stub.clone(),
         signed_in_at: crate::app::now_rfc3339(),
     })
+}
+
+/// A refused code's message from the shared login flow, without the retry
+/// command it ends with: the remedy says that, with the profile.
+fn without_retry(message: &str) -> &str {
+    message.split_once("; retry with").map_or(message, |(said, _)| said)
 }
 
 /// The two 1Password references an item names: its `username` and
@@ -678,6 +730,18 @@ pub fn reset(force: bool, interactive: bool, env: &Env, json: bool, quiet: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_codes_message_drops_the_shared_flows_retry_command() {
+        // The wording of pk_cli_auth::otp's refusal, which names the command
+        // without the profile.
+        let shared = "the code was refused: Invalid code received for user — 2 more attempts before the waiting login is discarded; retry with `salve auth login --code <CODE>`";
+        assert_eq!(
+            without_retry(shared),
+            "the code was refused: Invalid code received for user — 2 more attempts before the waiting login is discarded"
+        );
+        assert_eq!(without_retry("Salve refused the code"), "Salve refused the code");
+    }
 
     #[test]
     fn the_sign_in_reads_two_lines_and_never_quotes_them() {

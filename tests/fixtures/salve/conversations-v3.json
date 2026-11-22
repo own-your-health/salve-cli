@@ -1,6 +1,7 @@
 {
   "data": {
     "conversations": {
+      "cursor": "cursor-conversations",
       "records": [
         {
           "id": 7001,

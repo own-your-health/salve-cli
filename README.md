@@ -3,44 +3,90 @@
 Unofficial; not affiliated with or endorsed by Salve Health (Salve
 Technologies Ltd) or any clinic.
 
-`salve` reads a patient's records from Salve, the patient app fertility
-clinics give their patients, and hands them to the household's
-medical-records system as FHIR (`records-stream/v1`, read by `medrec import
---from salve`). It covers the documents the clinic sent, the files on the
-record, messages and their attachments, the forms the patient filled in, and
-video visits. It is read-only: it sends Salve's own queries, and none of the
-app's writes.
+`salve` is for anyone whose fertility clinic gives them the Salve app. It
+signs in to Salve as you, with your own email, password and texted code, and
+reads your records: the documents the clinic sent, the files on your record,
+messages and their attachments, the forms you filled in, and video visits.
+It writes them as FHIR (`records-stream/v1`), which
+[medrec](https://github.com/own-your-health/medrec-cli) files
+(`medrec import --from salve`) and any other reader of the stream can use. It
+is read-only: it sends Salve's own queries, and none of the app's writes.
 
-Salve publishes no patient API. salve reads the APIs Salve's own web app
-calls, as the patient, with the patient's sign-in. `docs/api.md` records how
-that was decided and every call salve makes.
+Salve publishes no patient API and has no developer program, so there is
+nothing to register. salve reads the APIs Salve's own web app calls, as the
+patient, with the patient's sign-in. `docs/api.md` records how that was
+decided and every call salve makes.
+
+## Salve's terms
+
+Salve's end-user licence forbids automated access to the service, and salve
+is automated access. It reads only your own account, one request at a time,
+each list once, and changes nothing there. Whether to use it on your account
+is your decision.
 
 ## Install
 
 ```sh
-cargo install --git https://github.com/piekstra/salve-cli --locked
+cargo install --git https://github.com/own-your-health/salve-cli --locked
 # or download a release: salve-<target>.tar.gz, then `salve self-update` later
 ```
+
+## Quick start
+
+```sh
+salve profiles add me
+printf '%s\n' 'you@example.com' "$PASSWORD" | salve auth login --profile me --stdin
+# Salve texts a code to your phone; at a terminal salve asks for it.
+# Without a terminal: salve auth login --profile me --code <CODE>
+salve records export --profile me --ndjson | tail -1    # the trailer: what was read
+
+# File the records with medrec (it runs the export itself):
+medrec config set providers salve
+medrec import --from salve --from-profile me --patient <ID> --profile <records folder>
+```
+
+`<ID>` is the patient id `salve patients list --profile me` prints. A
+1Password item works in place of stdin: `--op-item op://<VAULT>/<ITEM>` reads
+its `username` and `password` fields.
+
+## What needs you
+
+| Step | When | What you do |
+| --- | --- | --- |
+| The texted code | every sign-in | read it from your phone within about 3 minutes; a late or wrong code means a new sign-in, and a new text |
+| A 1Password approval | each sign-in with `--op-item` | approve the two reads (username, password) |
+| The macOS Keychain | the first run of a new or upgraded binary | allow it to read salve's one vault key ("Always Allow") |
+| An account still syncing | a sign-in while Salve is still bringing your clinic's records in | nothing salve can do: salve waits up to 3 minutes, as Salve's app does, then stops and keeps nothing; sign in again once the app shows your records |
+
+## How long a sign-in lasts
+
+The ID token lasts an hour, and salve renews it on its own from the refresh
+token, with no password or code. The refresh token lasts as long as Salve's
+sign-in settings allow (Amazon Cognito's default is 30 days; salve has not
+measured Salve's). Once it lapses, every command that reads Salve is exit 3
+and names the sign-in to run, which texts a new code. `salve auth status
+--profile <NAME> --check` asks Salve whether it still takes the sign-in,
+without a text.
 
 ## Use
 
 One profile per Salve account:
 
 ```sh
-salve profiles add adult1
-salve auth login --profile adult1 --op-item "op://Private/Salve"   # Salve texts a code; type it when asked
-salve auth status --profile adult1 --check    # one read: does Salve still take the sign-in?
-salve patients list --profile adult1
-salve documents list --profile adult1
-salve documents download --all --profile adult1 -o ~/Archive/Salve
-salve records export --profile adult1 --ndjson | head -1    # the stream's header
+salve profiles add me
+salve auth login --profile me --op-item "op://Private/Salve"   # Salve texts a code; type it when asked
+salve auth status --profile me --check    # one read: does Salve still take the sign-in?
+salve patients list --profile me
+salve documents list --profile me
+salve documents download --all --profile me -o ~/Archive/Salve
+salve records export --profile me --ndjson | head -1    # the stream's header
 
 # medrec runs the export itself:
 medrec config set providers salve
-medrec import --from salve --from-profile adult1 --patient <id> --profile <records folder>
+medrec import --from salve --from-profile me --patient <id> --profile <records folder>
 
 # One GraphQL query, printed as the data it answers (docs/api.md lists them):
-salve api '{ me { patientid } }' --profile adult1
+salve api '{ me { patientid } }' --profile me
 ```
 
 Every command that reads Salve takes `--profile <NAME>` (or
@@ -92,6 +138,12 @@ waiting sign-in in its vault and exits 3; `salve auth login --profile
 <NAME> --code <CODE>` (or `--code -` to read it from stdin) finishes it.
 Cognito holds a waiting sign-in about 3 minutes. A wrong code is exit 3 and
 the sign-in still waits.
+
+After the code, Salve may answer that it is still bringing the clinic's
+records into the account (its web app shows a "syncing" page). salve reads
+the account again every 3 seconds for up to 3 minutes, as that page does,
+and stores the sign-in once the records are there. If they are not, it is
+exit 3 and nothing is kept.
 
 What is kept is Cognito's tokens. The ID token lasts an hour; salve renews it
 from the refresh token when it is about to lapse or Salve refuses it, with no
@@ -158,7 +210,10 @@ The scratch service holds a vault key while you try it: `salve auth reset
 new code identity, and macOS asks before it reads an item another build
 made). `STUB_SCENARIO` (`no-mfa`, `v0-messaging`, `patient-api-fails`,
 `files-fail`, `bad-pdf`, `missing-file`, `short-tokens`, `refresh-revoked`,
-`revoke-unsupported`, `awaiting-sync`, `expire-after=N`) makes it answer the
+`revoke-unsupported`, `awaiting-sync`, `sync-after=N`,
+`broken-conversation`, `long-conversation=N`, `more-conversations=N`,
+`expire-after=N`) makes it
+answer the
 way the tests' cases do.
 
 ## License
