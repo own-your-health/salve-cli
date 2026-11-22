@@ -192,7 +192,7 @@ published; a `QuestionnaireResponse` would mean guessing it.
   proof and the code take `USER_ID_FOR_SRP`.
 - **Every sign-in texts a code**, and Cognito holds the waiting sign-in for
   about 3 minutes. Without a terminal, `auth login` parks it in the vault and
-  exits 3; `auth login --code <CODE>` finishes it. A code sent while nobody
+  exits 3; `auth login --code -`, with the code on stdin, finishes it. A code sent while nobody
   is there to read it is wasted, and Cognito limits how many it sends.
 - **The ID token, not the access token, and no `Bearer`.** The APIs refuse
   anything else as unauthorized.

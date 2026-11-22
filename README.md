@@ -37,7 +37,7 @@ cargo install --git https://github.com/own-your-health/salve-cli --locked
 salve profiles add me
 printf '%s\n' 'you@example.com' "$PASSWORD" | salve auth login --profile me --stdin
 # Salve texts a code to your phone; at a terminal salve asks for it.
-# Without a terminal: salve auth login --profile me --code <CODE>
+# Without a terminal: printf '%s' <CODE> | salve auth login --profile me --code -
 salve records export --profile me --ndjson | tail -1    # the trailer: what was read
 
 # File the records with medrec (it runs the export itself):
@@ -134,8 +134,9 @@ They are never taken on the command line and never stored. A refused
 password is exit 3, sent once and never retried.
 
 At a terminal, salve asks for the texted code. Without one, it keeps the
-waiting sign-in in its vault and exits 3; `salve auth login --profile
-<NAME> --code <CODE>` (or `--code -` to read it from stdin) finishes it.
+waiting sign-in in its vault and exits 3; `printf '%s' <CODE> | salve auth
+login --profile <NAME> --code -` finishes it. The code goes on stdin, not
+the command line, where other processes could read it.
 Cognito holds a waiting sign-in about 3 minutes. A wrong code is exit 3 and
 the sign-in still waits.
 

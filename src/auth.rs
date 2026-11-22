@@ -229,14 +229,15 @@ pub fn login(
     };
     let cognito = Cognito::new(&endpoints)?;
     let slot = store.slot(profile);
-    let finish_code =
-        |waiting: Option<(Secret, String, Option<String>)>, code: Option<&OtpCode>| -> Result<Tokens, CliError> {
-            let transport = SmsTransport {
-                cognito: &cognito,
-                endpoints: &endpoints,
-                waiting,
-            };
-            OtpLogin::new(BIN, &transport, &slot)
+    let finish_code = |waiting: Option<(Secret, String, Option<String>)>,
+                       code: Option<&OtpCode>|
+     -> Result<Tokens, CliError> {
+        let transport = SmsTransport {
+            cognito: &cognito,
+            endpoints: &endpoints,
+            waiting,
+        };
+        OtpLogin::new(BIN, &transport, &slot)
                 .interactive(interactive)
                 .quiet(quiet)
                 .max_age_secs(CODE_WINDOW_SECS)
@@ -258,10 +259,10 @@ pub fn login(
                     CliError::Auth(message)
                         .because(e.reason().unwrap_or(Reason::CredentialRefused))
                         .with_remedy(format!(
-                            "{BIN} auth login --profile {profile} --code <CODE>, within about 3 minutes of the text"
+                            "printf '%s' <CODE> | {BIN} auth login --profile {profile} --code -, within about 3 minutes of the text"
                         ))
                 })
-        };
+    };
     let now = crate::live::unix_now();
     let tokens = match source {
         Source::Code(code) => finish_code(None, Some(&code))?,

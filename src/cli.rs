@@ -85,8 +85,8 @@ pub enum AuthCmd {
     /// in. Never on the command line, and never stored.
     ///
     /// Salve texts a code to the account's phone. At a terminal salve asks
-    /// for it; otherwise it exits 3 and `--code <CODE>` finishes the sign-in
-    /// within about 3 minutes, Cognito's limit.
+    /// for it; otherwise it exits 3 and `--code -`, the code on stdin,
+    /// finishes the sign-in within about 3 minutes, Cognito's limit.
     Login(LoginCmd),
     /// Whether the profile's sign-in is stored, and with --check whether
     /// Salve still takes it (auth-status/v1).
