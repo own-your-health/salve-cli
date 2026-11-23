@@ -800,7 +800,10 @@ mod tests {
     fn the_sign_in_says_whether_salve_confirmed_its_device() {
         assert_eq!(login_json(Some(false))["device_confirmed"], false);
         assert_eq!(login_json(Some(true))["device_confirmed"], true);
-        assert!(login_json(None).get("device_confirmed").is_none(), "a pool without devices names none");
+        assert!(
+            login_json(None).get("device_confirmed").is_none(),
+            "a pool without devices names none"
+        );
         assert_eq!(login_json(None)["schema"], "auth-login/v1");
     }
 
