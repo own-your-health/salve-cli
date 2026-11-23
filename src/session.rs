@@ -93,9 +93,17 @@ impl Session {
     /// profile can hand back the same remembered device, or the same
     /// sign-in.
     pub fn not_carried_by(&self, next: &Session) -> Leftover {
+        next.not_shared_with(Some(&self.refresh_token), self.device_key().as_deref())
+    }
+
+    /// What of a sign-in holding `refresh_token` and `device` is not this
+    /// one's, so ending it at Salve leaves this one working.
+    pub fn not_shared_with(&self, refresh_token: Option<&Secret>, device: Option<&str>) -> Leftover {
         Leftover {
-            device: self.device_key().filter(|d| next.device_key().as_ref() != Some(d)),
-            refresh_token: self.refresh_token.expose() != next.refresh_token.expose(),
+            device: device
+                .filter(|d| self.device_key().as_deref() != Some(*d))
+                .map(str::to_string),
+            refresh_token: refresh_token.is_some_and(|r| r.expose() != self.refresh_token.expose()),
         }
     }
 
@@ -209,7 +217,6 @@ struct Entry {
     signed_in_at: String,
 }
 
-/// The sessions, one per profile.
 /// What of a sign-in to end at Salve: its device, if any, and whether its
 /// refresh token.
 #[derive(Debug, PartialEq, Eq)]
@@ -218,6 +225,7 @@ pub struct Leftover {
     pub refresh_token: bool,
 }
 
+/// The sessions, one per profile.
 pub struct SessionStore {
     vault: Vault,
 }
@@ -472,6 +480,45 @@ mod tests {
             Leftover {
                 device: Some("eu-west-2_dummy-a".into()),
                 refresh_token: true
+            }
+        );
+    }
+
+    #[test]
+    fn a_failed_sign_in_ends_none_of_the_stored_one() {
+        let mut kept = dummy();
+        kept.access_token = Secret::new(token(&serde_json::json!({ "device_key": "eu-west-2_dummy-a" })));
+        let same = Secret::new("dummy-refresh");
+        let other = Secret::new("dummy-refresh-2");
+        assert_eq!(
+            kept.not_shared_with(Some(&same), None),
+            Leftover {
+                device: None,
+                refresh_token: false
+            },
+            "a browser sign-in that handed back the stored tokens"
+        );
+        assert_eq!(
+            kept.not_shared_with(Some(&other), Some("eu-west-2_dummy-a")),
+            Leftover {
+                device: None,
+                refresh_token: true
+            },
+            "the stored entry's device stays"
+        );
+        assert_eq!(
+            kept.not_shared_with(Some(&other), Some("eu-west-2_dummy-b")),
+            Leftover {
+                device: Some("eu-west-2_dummy-b".into()),
+                refresh_token: true
+            },
+            "a sign-in of its own ends whole"
+        );
+        assert_eq!(
+            kept.not_shared_with(None, None),
+            Leftover {
+                device: None,
+                refresh_token: false
             }
         );
     }

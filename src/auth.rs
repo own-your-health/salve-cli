@@ -306,6 +306,10 @@ pub fn login(
     let refresh = tokens.refresh_token.as_ref().map(|r| Secret::new(r.expose()));
     // Until the new sign-in is stored, an error ends it at Salve as well, so
     // nothing of a sign-in salve does not hold stays there.
+    // The entry this sign-in replaces: kept if this one fails, ended at
+    // Salve once this one is stored.
+    let old_key = stored.key(profile);
+    let replaced = old_key.as_ref().and_then(|k| store.get(k).ok().flatten());
     let stored_new = (|| {
         let session = read_account(&endpoints, tokens, now, quiet)?;
         let settings = LoginSettings {
@@ -314,15 +318,22 @@ pub fn login(
             label: Some(label),
         };
         let key = settings.key(profile).expect("a clinic id is set");
-        let old_key = stored.key(profile);
-        let replaced = old_key.as_ref().and_then(|k| store.get(k).ok().flatten());
         store.put(&key, &session)?;
-        Ok::<_, CliError>((session, settings, key, old_key, replaced))
+        Ok::<_, CliError>((session, settings, key))
     })();
-    let (session, settings, key, old_key, replaced) = match stored_new {
+    let (session, settings, key) = match stored_new {
         Ok(stored) => stored,
         Err(e) => {
-            end_unstored(&cognito, &access, refresh.as_ref(), device.as_deref());
+            // A `--browser` sign-in can hand back the stored entry's own
+            // tokens or device: those stay, as the entry does.
+            let ends = match &replaced {
+                Some(kept) => kept.not_shared_with(refresh.as_ref(), device.as_deref()),
+                None => Leftover {
+                    device,
+                    refresh_token: refresh.is_some(),
+                },
+            };
+            end_unstored(&cognito, &access, refresh.as_ref(), ends);
             return Err(e);
         }
     };
@@ -346,10 +357,10 @@ pub fn login(
     Ok(LoggedIn { settings })
 }
 
-/// Ends at Salve a sign-in salve did not store: the device it confirmed,
-/// then the sign-in. A failure is a warning.
-fn end_unstored(cognito: &Cognito, access: &Secret, refresh: Option<&Secret>, device: Option<&str>) {
-    if let Some(d) = device {
+/// Ends `ends` of a sign-in salve did not store at Salve: the device it
+/// confirmed, then the sign-in. A failure is a warning.
+fn end_unstored(cognito: &Cognito, access: &Secret, refresh: Option<&Secret>, ends: Leftover) {
+    if let Some(d) = &ends.device {
         if let Err(e) = cognito.forget_device(access, d) {
             eprintln!(
                 "warning: Salve still lists the device of a sign-in salve did not store: {}",
@@ -357,7 +368,7 @@ fn end_unstored(cognito: &Cognito, access: &Secret, refresh: Option<&Secret>, de
             );
         }
     }
-    if let Some(r) = refresh {
+    if let Some(r) = refresh.filter(|_| ends.refresh_token) {
         if let Err(e) = cognito.revoke(r) {
             eprintln!(
                 "warning: Salve still holds a sign-in salve did not store: {}",
