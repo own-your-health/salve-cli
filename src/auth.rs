@@ -286,6 +286,14 @@ pub fn login(
         }
         Source::Browser => browser_tokens(profile, &endpoints, cmd.browser.fresh_profile, env.hermetic, quiet)?,
     };
+    if let Some(device) = &tokens.new_device {
+        if let Err(e) = cognito.confirm_device(&tokens.access_token, device) {
+            eprintln!(
+                "warning: Salve did not confirm this sign-in's device ({}); the sign-in works for an hour, and its renewal may then be refused",
+                e.message()
+            );
+        }
+    }
     let session = read_account(&endpoints, tokens, now, quiet)?;
     let settings = LoginSettings {
         clinic_id: Some(session.clinic_id.clone()),
@@ -517,6 +525,8 @@ fn browser_tokens(
             access_token: a,
             refresh_token: Some(r),
             expires_in: 3600,
+            // Salve's page confirms its own device; the access token names it.
+            new_device: None,
         }),
         _ => Err(CliError::Upstream(
             "Salve's page keeps its sign-in in a shape salve does not read".into(),

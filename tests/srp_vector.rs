@@ -3,6 +3,7 @@
 //! a server `B` made from a known password, salt and `b`, a secret block
 //! and a timestamp. The vector's README entry says how it was made.
 
+use base64::Engine;
 use num_bigint::BigUint;
 use salve::srp::{self, Client, Group};
 use serde_json::Value;
@@ -13,6 +14,19 @@ fn vector() -> Value {
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap()
+}
+
+/// The device verifier `ConfirmDevice` takes, against the reference
+/// client's `generateHashDevice` over a fixed password and salt.
+#[test]
+fn the_device_verifier_matches_the_reference_client() {
+    let v: Value = serde_json::from_str(include_str!("fixtures/device-vector.json")).unwrap();
+    let salt = srp::decode_hex(s(&v, "salt_hex")).unwrap();
+    // The reference client's device password is 40 random bytes, base64.
+    let random = base64::engine::general_purpose::STANDARD.encode(s(&v, "random_text"));
+    let d = srp::device_verifier_with(s(&v, "group_key"), s(&v, "device_key"), &random, &salt);
+    assert_eq!(d.salt, s(&v, "salt"));
+    assert_eq!(d.verifier, s(&v, "verifier"));
 }
 
 #[test]

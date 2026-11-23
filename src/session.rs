@@ -71,6 +71,15 @@ impl Session {
             .map(str::to_string)
     }
 
+    /// The device Cognito tracks this sign-in as: the access token's
+    /// `device_key` claim. Salve's pool tracks devices, and refuses a
+    /// renewal that does not name the device ("Invalid Refresh Token").
+    pub fn device_key(&self) -> Option<String> {
+        claims(self.access_token.expose())?["device_key"]
+            .as_str()
+            .map(str::to_string)
+    }
+
     /// Whether the tokens lapse within [`RENEW_BEFORE_SECS`].
     pub fn lapsing(&self, now: u64) -> bool {
         self.expires_at <= now + RENEW_BEFORE_SECS
@@ -385,6 +394,16 @@ mod tests {
     }
 
     #[test]
+    fn the_device_is_the_access_tokens_device_key() {
+        let mut s = dummy();
+        assert_eq!(s.device_key(), None, "an opaque access token names none");
+        s.access_token = Secret::new(token(&serde_json::json!({ "device_key": "eu-west-2_dummy-device" })));
+        assert_eq!(s.device_key().as_deref(), Some("eu-west-2_dummy-device"));
+        s.access_token = Secret::new(token(&serde_json::json!({ "token_use": "access" })));
+        assert_eq!(s.device_key(), None);
+    }
+
+    #[test]
     fn a_blank_service_names_none() {
         assert_eq!(service_override(None), None);
         assert_eq!(service_override(Some("  ")), None);
@@ -405,6 +424,7 @@ mod tests {
             access_token: Secret::new("a"),
             refresh_token: None,
             expires_in: 3600,
+            new_device: None,
         };
         assert_eq!(expiry(&t, 100), 5000);
         let opaque = Tokens {
@@ -412,6 +432,7 @@ mod tests {
             access_token: Secret::new("a"),
             refresh_token: None,
             expires_in: 3600,
+            new_device: None,
         };
         assert_eq!(expiry(&opaque, 100), 3700);
         let mut s = dummy();

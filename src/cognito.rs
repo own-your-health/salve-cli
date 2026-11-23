@@ -13,6 +13,11 @@
 //! refresh token, which renews the other two (`REFRESH_TOKEN_AUTH`) with no
 //! password or code until it lapses or is revoked.
 //!
+//! The pool tracks devices. A sign-in also names a new device
+//! (`NewDeviceMetadata`), and a renewal is refused ("Invalid Refresh
+//! Token") unless it names that device and the device was confirmed
+//! (`ConfirmDevice`), as Salve's web app does after every sign-in.
+//!
 //! Each call is one request, never retried: a refused password is spent
 //! once.
 
@@ -37,7 +42,20 @@ pub struct Tokens {
     pub refresh_token: Option<Secret>,
     /// Seconds the ID and access tokens last.
     pub expires_in: u64,
+    /// The device the sign-in was tracked as, to confirm; a renewal names
+    /// none.
+    pub new_device: Option<NewDevice>,
 }
+
+/// A device a sign-in was tracked as (`NewDeviceMetadata`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewDevice {
+    pub key: String,
+    pub group_key: String,
+}
+
+/// The name a confirmed device has in the account's list of devices.
+const DEVICE_NAME: &str = "salve (command line)";
 
 /// The step a sign-in is at after the password's proof.
 pub enum Step {
@@ -162,17 +180,39 @@ impl Cognito {
         }
     }
 
-    /// New ID and access tokens from the refresh token.
-    pub fn refresh(&self, refresh_token: &Secret) -> Result<Tokens, CliError> {
+    /// New ID and access tokens from the refresh token, naming the device
+    /// the sign-in was tracked as, when it was.
+    pub fn refresh(&self, refresh_token: &Secret, device_key: Option<&str>) -> Result<Tokens, CliError> {
+        let mut parameters = json!({ "REFRESH_TOKEN": refresh_token.expose() });
+        if let Some(device) = device_key {
+            parameters["DEVICE_KEY"] = json!(device);
+        }
         let answered = self.call(
             "InitiateAuth",
             &json!({
                 "AuthFlow": "REFRESH_TOKEN_AUTH",
                 "ClientId": CLIENT_ID,
-                "AuthParameters": { "REFRESH_TOKEN": refresh_token.expose() },
+                "AuthParameters": parameters,
             }),
         )?;
         tokens(&answered["AuthenticationResult"]).ok_or_else(|| unexpected(&answered, "its renewal"))
+    }
+
+    /// `ConfirmDevice` for the device a sign-in was tracked as, so that
+    /// renewals naming it are taken. The device's verifier is made from a
+    /// password salve drops at once ([`srp::device_verifier`]).
+    pub fn confirm_device(&self, access_token: &Secret, device: &NewDevice) -> Result<(), CliError> {
+        let v = srp::device_verifier(&device.group_key, &device.key)?;
+        self.call(
+            "ConfirmDevice",
+            &json!({
+                "AccessToken": access_token.expose(),
+                "DeviceKey": device.key,
+                "DeviceName": DEVICE_NAME,
+                "DeviceSecretVerifierConfig": { "PasswordVerifier": v.verifier, "Salt": v.salt },
+            }),
+        )
+        .map(|_| ())
     }
 
     /// `RevokeToken`: the refresh token, and the tokens it issued, stop
@@ -225,6 +265,16 @@ fn tokens(r: &Value) -> Option<Tokens> {
         access_token: Secret::new(access),
         refresh_token: r["RefreshToken"].as_str().map(Secret::new),
         expires_in: r["ExpiresIn"].as_u64().unwrap_or(3600),
+        new_device: match (
+            r["NewDeviceMetadata"]["DeviceKey"].as_str(),
+            r["NewDeviceMetadata"]["DeviceGroupKey"].as_str(),
+        ) {
+            (Some(key), Some(group)) => Some(NewDevice {
+                key: key.to_string(),
+                group_key: group.to_string(),
+            }),
+            _ => None,
+        },
     })
 }
 

@@ -791,3 +791,73 @@ fn profiles_and_reset() {
     assert_eq!(h.run(&["auth", "reset", "--force"]), 0);
     assert!(h.store().get(&h.key("adult3")).unwrap().is_none());
 }
+
+/// Salve's pool tracks devices: a sign-in confirms the device it names, as
+/// Salve's web app does, and a renewal names that device. Without both,
+/// Cognito answers "Invalid Refresh Token".
+#[test]
+fn a_sign_in_confirms_its_device_and_a_renewal_names_it() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.stub.confirms(), 1);
+    let bodies: Vec<Value> = h
+        .stub
+        .cognito_bodies()
+        .iter()
+        .map(|b| serde_json::from_str(b).unwrap())
+        .collect();
+    let confirm = bodies
+        .iter()
+        .find(|b| b.get("DeviceSecretVerifierConfig").is_some())
+        .unwrap();
+    let device = confirm["DeviceKey"].as_str().unwrap().to_string();
+    assert!(confirm["AccessToken"].is_string() && confirm["DeviceName"].is_string());
+    let config = confirm["DeviceSecretVerifierConfig"].as_object().unwrap();
+    let mut keys: Vec<&str> = config.keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["PasswordVerifier", "Salt"],
+        "the device's password never leaves salve"
+    );
+    assert_eq!(h.run(&["auth", "status", "--check", "--profile", "adult1"]), 0);
+    assert_eq!(h.stub.refreshes(), 1, "the renewal was taken");
+    let renewal: Value = serde_json::from_str(h.stub.cognito_bodies().last().unwrap()).unwrap();
+    assert_eq!(renewal["AuthParameters"]["DEVICE_KEY"], device.as_str());
+}
+
+/// A pool that tracks no devices: nothing to confirm, and a renewal names
+/// no device.
+#[test]
+fn a_pool_without_devices_renews_without_naming_one() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        untracked_devices: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.stub.confirms(), 0);
+    assert_eq!(h.run(&["auth", "status", "--check", "--profile", "adult1"]), 0);
+    assert_eq!(h.stub.refreshes(), 1);
+    let renewal: Value = serde_json::from_str(h.stub.cognito_bodies().last().unwrap()).unwrap();
+    assert!(renewal["AuthParameters"].get("DEVICE_KEY").is_none());
+}
+
+/// A device Salve would not confirm: the sign-in is still stored (it works
+/// for an hour), and its renewal is then refused, exit 3, as on Salve.
+#[test]
+fn a_device_salve_would_not_confirm_lasts_until_its_first_renewal() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        confirm_device_fails: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.stub.confirms(), 0);
+    let (code, _) = h.export("adult1", "unconfirmed", &[]);
+    assert_eq!(code, 3);
+    assert_eq!(h.stub.refreshes(), 0, "Cognito refused the renewal");
+}

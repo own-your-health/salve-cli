@@ -11,6 +11,8 @@ It writes them as FHIR (`records-stream/v1`), which
 [medrec](https://github.com/own-your-health/medrec-cli) files
 (`medrec import --from salve`) and any other reader of the stream can use. It
 is read-only: it sends Salve's own queries, and none of the app's writes.
+Like the app, a sign-in also confirms its device with Salve, so the
+account's devices list `salve (command line)`.
 
 Salve publishes no patient API and has no developer program, so there is
 nothing to register. salve reads the APIs Salve's own web app calls, as the
@@ -63,7 +65,10 @@ its `username` and `password` fields.
 The ID token lasts an hour, and salve renews it on its own from the refresh
 token, with no password or code. The refresh token lasts as long as Salve's
 sign-in settings allow (Amazon Cognito's default is 30 days; salve has not
-measured Salve's). Once it lapses, every command that reads Salve is exit 3
+measured Salve's). Salve takes a renewal only for the device the sign-in
+confirmed, so a sign-in made with salve before 0.1.2, which confirmed no
+device, stops working after its first hour. Once the refresh token lapses,
+every command that reads Salve is exit 3
 and names the sign-in to run, which texts a new code. `salve auth status
 --profile <NAME> --check` asks Salve whether it still takes the sign-in,
 without a text.
@@ -213,7 +218,7 @@ made). `STUB_SCENARIO` (`no-mfa`, `v0-messaging`, `patient-api-fails`,
 `files-fail`, `bad-pdf`, `missing-file`, `short-tokens`, `refresh-revoked`,
 `revoke-unsupported`, `awaiting-sync`, `sync-after=N`,
 `broken-conversation`, `long-conversation=N`, `more-conversations=N`,
-`expire-after=N`) makes it
+`untracked-devices`, `confirm-device-fails`, `expire-after=N`) makes it
 answer the
 way the tests' cases do.
 

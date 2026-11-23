@@ -55,7 +55,8 @@ AWSCognitoIdentityProviderService.<Action>`.
 | Start | `InitiateAuth`, `AuthFlow: USER_SRP_AUTH`, `AuthParameters: {USERNAME: <email>, SRP_A}` | `ChallengeName: PASSWORD_VERIFIER`, `ChallengeParameters: {SALT, SRP_B, SECRET_BLOCK, USER_ID_FOR_SRP, USERNAME}` |
 | Prove the password | `RespondToAuthChallenge`, `ChallengeName: PASSWORD_VERIFIER`, `ChallengeResponses: {USERNAME: <USER_ID_FOR_SRP>, PASSWORD_CLAIM_SECRET_BLOCK, TIMESTAMP, PASSWORD_CLAIM_SIGNATURE}` | `ChallengeName: SMS_MFA`, `Session`, `ChallengeParameters: {CODE_DELIVERY_DESTINATION}` (the masked number); or `AuthenticationResult` for an account without a code |
 | The texted code | `RespondToAuthChallenge`, `ChallengeName: SMS_MFA`, `Session`, `ChallengeResponses: {USERNAME, SMS_MFA_CODE}` | `AuthenticationResult: {IdToken, AccessToken, RefreshToken, ExpiresIn}` |
-| Renew | `InitiateAuth`, `AuthFlow: REFRESH_TOKEN_AUTH`, `AuthParameters: {REFRESH_TOKEN}` | a new `IdToken` and `AccessToken`; no new refresh token |
+| Confirm the device | `ConfirmDevice`, `{AccessToken, DeviceKey, DeviceName, DeviceSecretVerifierConfig: {PasswordVerifier, Salt}}`, no `ClientId` | `{UserConfirmationNecessary}` |
+| Renew | `InitiateAuth`, `AuthFlow: REFRESH_TOKEN_AUTH`, `AuthParameters: {REFRESH_TOKEN, DEVICE_KEY}` | a new `IdToken` and `AccessToken`; no new refresh token |
 | Sign out | `RevokeToken`, `{ClientId, Token: <refresh token>}` | `{}`; the refresh token and the tokens it issued stop working |
 
 The two probes, with an invented email and no password:
@@ -218,6 +219,17 @@ published; a `QuestionnaireResponse` would mean guessing it.
 - **`FormInput` takes `patientformid` and `version` as integers**, as the
   form list answers them; a string is refused ("Int cannot represent
   non-integer value").
+- **The pool tracks devices.** The sign-in's `AuthenticationResult` also
+  carries `NewDeviceMetadata: {DeviceKey, DeviceGroupKey}`, and each access
+  token names the device (`device_key`). A renewal is refused with
+  `NotAuthorizedException` "Invalid Refresh Token." unless it names the
+  device and the device was confirmed first. Real sign-ins confirmed this.
+  A renewal naming no device is refused. So is one naming the device before
+  `ConfirmDevice`. One naming it after `ConfirmDevice` is taken. salve
+  confirms the device the way AWS's reference client does
+  (`generateHashDevice`: a random password hashed with the device group and
+  key under a random salt). It drops the password, so it never signs in as
+  the device, and a device never stands in for the texted code.
 - **Renewal answers no refresh token.** The one from the sign-in is kept
   until it lapses or is revoked. A token that worked and is then refused is
   renewed once; a token refused right after its renewal means the sign-in

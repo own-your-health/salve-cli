@@ -13,7 +13,8 @@
 //! `no-mfa`, `v0-messaging`, `patient-api-fails`, `files-fail`, `bad-pdf`,
 //! `missing-file`, `short-tokens`, `refresh-revoked`, `revoke-unsupported`,
 //! `awaiting-sync`, `sync-after=N`, `broken-conversation`,
-//! `long-conversation=N`, `more-conversations=N`, `expire-after=N`.
+//! `long-conversation=N`, `more-conversations=N`, `untracked-devices`,
+//! `confirm-device-fails`, `expire-after=N`.
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -34,6 +35,8 @@ fn main() {
             "revoke-unsupported" => scenario.revoke_unsupported = true,
             "awaiting-sync" => scenario.awaiting_sync = true,
             "broken-conversation" => scenario.broken_conversation = true,
+            "untracked-devices" => scenario.untracked_devices = true,
+            "confirm-device-fails" => scenario.confirm_device_fails = true,
             other => {
                 let count = |prefix: &str| other.strip_prefix(prefix).map(str::parse::<usize>);
                 match [
