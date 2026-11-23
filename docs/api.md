@@ -57,6 +57,7 @@ AWSCognitoIdentityProviderService.<Action>`.
 | The texted code | `RespondToAuthChallenge`, `ChallengeName: SMS_MFA`, `Session`, `ChallengeResponses: {USERNAME, SMS_MFA_CODE}` | `AuthenticationResult: {IdToken, AccessToken, RefreshToken, ExpiresIn}` |
 | Confirm the device | `ConfirmDevice`, `{AccessToken, DeviceKey, DeviceName, DeviceSecretVerifierConfig: {PasswordVerifier, Salt}}`, no `ClientId` | `{UserConfirmationNecessary}` |
 | Renew | `InitiateAuth`, `AuthFlow: REFRESH_TOKEN_AUTH`, `AuthParameters: {REFRESH_TOKEN, DEVICE_KEY}` | a new `IdToken` and `AccessToken`; no new refresh token |
+| Forget the device | `ForgetDevice`, `{AccessToken, DeviceKey}`, no `ClientId`; before the sign-out, as it needs a live access token | `{}`; the device leaves the account's list and renews no more |
 | Sign out | `RevokeToken`, `{ClientId, Token: <refresh token>}` | `{}`; the refresh token and the tokens it issued stop working |
 
 The two probes, with an invented email and no password:

@@ -56,7 +56,9 @@ These come from the household's plan and are not negotiable.
 - Read-only. salve sends only the queries in `src/queries.rs`, and
   `check_read` refuses any GraphQL document with a mutation or subscription,
   `salve api`'s included. A write would need SPEC §1.3's confirmation gate
-  and a change to this paragraph in the same commit.
+  and a change to this paragraph in the same commit. The one exception is
+  Cognito's device record: a sign-in confirms its device, as Salve's app
+  does, and `auth logout` forgets it (`src/cognito.rs`).
 - No credential, token, code, session handle or download link is printed,
   logged or put on a command line. The password is never stored, and SRP
   means it is never sent.

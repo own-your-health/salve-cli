@@ -215,6 +215,17 @@ impl Cognito {
         .map(|_| ())
     }
 
+    /// `ForgetDevice`: the device leaves the account's list, and renewals
+    /// naming it stop. Takes a live access token, so it goes before
+    /// [`Cognito::revoke`].
+    pub fn forget_device(&self, access_token: &Secret, device_key: &str) -> Result<(), CliError> {
+        self.call(
+            "ForgetDevice",
+            &json!({ "AccessToken": access_token.expose(), "DeviceKey": device_key }),
+        )
+        .map(|_| ())
+    }
+
     /// `RevokeToken`: the refresh token, and the tokens it issued, stop
     /// working. Signs out this sign-in only, not the patient's other
     /// devices.

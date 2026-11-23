@@ -656,6 +656,10 @@ fn an_account_salve_has_not_finished_setting_up_stores_nothing() {
     );
     assert_eq!(h.run(&["auth", "login", "--profile", "adult1", "--code", CODE]), 3);
     assert_eq!(h.settings("adult1").clinic_id, None);
+    // Nothing of the sign-in stays live at Salve: the device it confirmed
+    // is forgotten and the sign-in revoked.
+    assert_eq!((h.stub.confirms(), h.stub.forgets(), h.stub.revokes()), (1, 1, 1));
+    assert!(!h.stub.holds_sign_in());
 }
 
 #[test]
@@ -860,4 +864,30 @@ fn a_device_salve_would_not_confirm_lasts_until_its_first_renewal() {
     let (code, _) = h.export("adult1", "unconfirmed", &[]);
     assert_eq!(code, 3);
     assert_eq!(h.stub.refreshes(), 0, "Cognito refused the renewal");
+}
+
+/// `auth logout` removes the device the sign-in confirmed, then revokes the
+/// sign-in: forgetting takes a live access token, which revoking ends.
+#[test]
+fn logout_forgets_the_device_then_revokes_the_sign_in() {
+    let h = H::new(Scenario::default());
+    h.signed_in("adult1");
+    assert_eq!(h.run(&["auth", "logout", "--profile", "adult1"]), 0);
+    assert_eq!((h.stub.forgets(), h.stub.revokes(), h.stub.refreshes()), (1, 1, 0));
+    let log = h.stub.log();
+    let at = |entry: &str| log.iter().position(|l| l.starts_with(entry)).unwrap();
+    assert!(at("cognito ForgetDevice") < at("cognito RevokeToken"));
+    assert!(!h.stub.holds_sign_in());
+}
+
+/// With the access token lapsed, logout renews it once to forget the device.
+#[test]
+fn logout_with_lapsed_tokens_renews_them_to_forget_the_device() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.run(&["auth", "logout", "--profile", "adult1"]), 0);
+    assert_eq!((h.stub.refreshes(), h.stub.forgets(), h.stub.revokes()), (1, 1, 1));
 }

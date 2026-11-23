@@ -127,6 +127,7 @@ struct State {
     /// The refresh token each access token was issued under.
     access: HashMap<String, String>,
     confirms: usize,
+    forgets: usize,
 }
 
 pub struct Stub {
@@ -186,6 +187,11 @@ impl Stub {
     /// Devices confirmed with `ConfirmDevice`.
     pub fn confirms(&self) -> usize {
         self.state.lock().unwrap().confirms
+    }
+
+    /// Devices forgotten with `ForgetDevice`.
+    pub fn forgets(&self) -> usize {
+        self.state.lock().unwrap().forgets
     }
 
     pub fn leaks(&self) -> Vec<String> {
@@ -387,9 +393,10 @@ fn cognito(req: &Request, state: &Mutex<State>, scenario: &Scenario) -> (u16, St
         }
         (200, answer.to_string())
     };
-    // ConfirmDevice is the one call that names no client: its access token
-    // says whose device it is.
-    if action != "ConfirmDevice" && body["ClientId"].as_str() != Some(salve::endpoints::CLIENT_ID) {
+    // ConfirmDevice and ForgetDevice name no client: the access token says
+    // whose device it is.
+    let by_access_token = matches!(action.as_str(), "ConfirmDevice" | "ForgetDevice");
+    if !by_access_token && body["ClientId"].as_str() != Some(salve::endpoints::CLIENT_ID) {
         return (
             400,
             json!({ "__type": "ResourceNotFoundException", "message": "User pool client does not exist." }).to_string(),
@@ -538,6 +545,23 @@ fn cognito(req: &Request, state: &Mutex<State>, scenario: &Scenario) -> (u16, St
                     *confirmed = true;
                     s.confirms += 1;
                     (200, json!({ "UserConfirmationNecessary": false }).to_string())
+                }
+                _ => (
+                    400,
+                    json!({ "__type": "ResourceNotFoundException", "message": "Device does not exist." }).to_string(),
+                ),
+            }
+        }
+        ("ForgetDevice", _) => {
+            let mut s = state.lock().unwrap();
+            let refresh = s.access.get(body["AccessToken"].as_str().unwrap_or_default()).cloned();
+            let key = body["DeviceKey"].as_str().unwrap_or_default().to_string();
+            match refresh.and_then(|r| s.devices.get_mut(&r)) {
+                // A forgotten device renews no more, as an unconfirmed one.
+                Some((d, confirmed)) if *d == key => {
+                    *confirmed = false;
+                    s.forgets += 1;
+                    (200, "{}".to_string())
                 }
                 _ => (
                     400,
