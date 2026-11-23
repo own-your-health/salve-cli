@@ -31,7 +31,7 @@ use crate::model::{self, MeOnly, PatientAndClinic};
 use crate::pull::Reader;
 use crate::queries;
 use crate::salve::{self, Api};
-use crate::session::{self, Key, Session, SessionStore, KEYCHAIN_SERVICE_ENV};
+use crate::session::{self, Key, Leftover, Session, SessionStore, KEYCHAIN_SERVICE_ENV};
 
 /// Cognito keeps a sign-in waiting on its code about this long.
 pub const CODE_WINDOW_SECS: u64 = 180;
@@ -332,7 +332,7 @@ pub fn login(
     }
     // The sign-in this one replaces ends at Salve, its device first.
     if let Some(old) = replaced {
-        end_at_salve(&old, "the replaced sign-in");
+        end_at_salve(&old, old.not_carried_by(&session), "the replaced sign-in");
     }
     if !quiet {
         eprintln!(
@@ -367,20 +367,26 @@ fn end_unstored(cognito: &Cognito, access: &Secret, refresh: Option<&Secret>, de
     }
 }
 
-/// What ending a stored sign-in at Salve did.
+/// What ending a stored sign-in at Salve did; `None` for what was not asked.
 struct Ended {
-    /// `None` when the sign-in names no device.
     device_forgotten: Option<bool>,
-    revoked: bool,
+    revoked: Option<bool>,
 }
 
-/// Ends a stored sign-in at Salve: its device first, since forgetting it
-/// takes a live access token, which revoking ends (a lapsed one is renewed
-/// for it), then the sign-in. A failure is a warning naming `what`.
-fn end_at_salve(s: &Session, what: &str) -> Ended {
+/// Ends `ends` of a stored sign-in at Salve: its device first, since
+/// forgetting it takes a live access token, which revoking ends (a lapsed
+/// one is renewed for it), then the sign-in. A failure is a warning naming
+/// `what`.
+fn end_at_salve(s: &Session, ends: Leftover, what: &str) -> Ended {
+    let mut ended = Ended {
+        device_forgotten: None,
+        revoked: None,
+    };
+    if ends.device.is_none() && !ends.refresh_token {
+        return ended;
+    }
     let cognito = Endpoints::of_session(s.stub.as_deref()).and_then(|ep| Cognito::new(&ep));
-    let mut device_forgotten = None;
-    if let (Ok(c), Some(device)) = (&cognito, s.device_key()) {
+    if let (Ok(c), Some(device)) = (&cognito, ends.device) {
         let access = if s.lapsing(crate::live::unix_now()) {
             c.refresh(&s.refresh_token, Some(&device)).map(|t| t.access_token)
         } else {
@@ -390,16 +396,16 @@ fn end_at_salve(s: &Session, what: &str) -> Ended {
         if let Err(e) = &done {
             eprintln!("warning: Salve still lists the device of {what}: {}", e.message());
         }
-        device_forgotten = Some(done.is_ok());
+        ended.device_forgotten = Some(done.is_ok());
     }
-    let done = cognito.and_then(|c| c.revoke(&s.refresh_token));
-    if let Err(e) = &done {
-        eprintln!("warning: Salve was not told to end {what}: {}", e.message());
+    if ends.refresh_token {
+        let done = cognito.and_then(|c| c.revoke(&s.refresh_token));
+        if let Err(e) = &done {
+            eprintln!("warning: Salve was not told to end {what}: {}", e.message());
+        }
+        ended.revoked = Some(done.is_ok());
     }
-    Ended {
-        device_forgotten,
-        revoked: done.is_ok(),
-    }
+    ended
 }
 
 /// `auth-login/v1`, with whether Salve confirmed the sign-in's device when
@@ -796,9 +802,9 @@ pub fn forget_login(
             Err(e) => return Err(e),
         };
         if let (Some(s), true) = (&session, at_salve) {
-            let ended = end_at_salve(s, "this sign-in");
+            let ended = end_at_salve(s, s.whole(), "this sign-in");
             device_forgotten = ended.device_forgotten;
-            revoked = Some(ended.revoked);
+            revoked = ended.revoked;
         }
         removed = store.delete(&key)?;
         store.slot(profile).clear()?;

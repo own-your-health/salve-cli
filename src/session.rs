@@ -80,6 +80,25 @@ impl Session {
             .map(str::to_string)
     }
 
+    /// All of this sign-in, to end at Salve.
+    pub fn whole(&self) -> Leftover {
+        Leftover {
+            device: self.device_key(),
+            refresh_token: true,
+        }
+    }
+
+    /// What of this sign-in `next` does not carry on, so ending it at Salve
+    /// leaves `next` working. A `--browser` sign-in from a kept browser
+    /// profile can hand back the same remembered device, or the same
+    /// sign-in.
+    pub fn not_carried_by(&self, next: &Session) -> Leftover {
+        Leftover {
+            device: self.device_key().filter(|d| next.device_key().as_ref() != Some(d)),
+            refresh_token: self.refresh_token.expose() != next.refresh_token.expose(),
+        }
+    }
+
     /// Whether the tokens lapse within [`RENEW_BEFORE_SECS`].
     pub fn lapsing(&self, now: u64) -> bool {
         self.expires_at <= now + RENEW_BEFORE_SECS
@@ -191,6 +210,14 @@ struct Entry {
 }
 
 /// The sessions, one per profile.
+/// What of a sign-in to end at Salve: its device, if any, and whether its
+/// refresh token.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Leftover {
+    pub device: Option<String>,
+    pub refresh_token: bool,
+}
+
 pub struct SessionStore {
     vault: Vault,
 }
@@ -401,6 +428,52 @@ mod tests {
         assert_eq!(s.device_key().as_deref(), Some("eu-west-2_dummy-device"));
         s.access_token = Secret::new(token(&serde_json::json!({ "token_use": "access" })));
         assert_eq!(s.device_key(), None);
+    }
+
+    #[test]
+    fn a_replaced_sign_in_ends_only_what_the_new_one_does_not_share() {
+        let with = |device: &str, refresh: &str| {
+            let mut s = dummy();
+            s.access_token = Secret::new(token(&serde_json::json!({ "device_key": device })));
+            s.refresh_token = Secret::new(refresh);
+            s
+        };
+        let old = with("eu-west-2_dummy-a", "dummy-refresh-1");
+        assert_eq!(
+            old.not_carried_by(&with("eu-west-2_dummy-b", "dummy-refresh-2")),
+            Leftover {
+                device: Some("eu-west-2_dummy-a".into()),
+                refresh_token: true
+            },
+            "a new device and sign-in: all of the old one ends"
+        );
+        assert_eq!(
+            old.not_carried_by(&with("eu-west-2_dummy-a", "dummy-refresh-2")),
+            Leftover {
+                device: None,
+                refresh_token: true
+            },
+            "the same remembered device stays"
+        );
+        assert_eq!(
+            old.not_carried_by(&with("eu-west-2_dummy-a", "dummy-refresh-1")),
+            Leftover {
+                device: None,
+                refresh_token: false
+            },
+            "the same sign-in handed back: nothing ends"
+        );
+        assert_eq!(
+            old.not_carried_by(&dummy()).device.as_deref(),
+            Some("eu-west-2_dummy-a")
+        );
+        assert_eq!(
+            old.whole(),
+            Leftover {
+                device: Some("eu-west-2_dummy-a".into()),
+                refresh_token: true
+            }
+        );
     }
 
     #[test]
