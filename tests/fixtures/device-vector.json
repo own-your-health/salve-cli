@@ -1,0 +1,8 @@
+{
+ "group_key": "-dummyGroup1",
+ "device_key": "eu-west-2_00000000-0000-4000-8000-000000000001",
+ "random_text": "a synthetic random input for the test",
+ "salt_hex": "8f1e2d3c4b5a69788796a5b4c3d2e1f0",
+ "salt": "AI8eLTxLWml4h5altMPS4fA=",
+ "verifier": "DjThTStOwRwE6MakJ2hlA35W6bER6kVUB8OUCYd9t5WRKFMCtp9LuO4cLrKEJYNRiNyQXGN2EM5MZTTjkJL91q+ScALggh+t/rFwAgrAH8F5w+/AHbUeOzR5Yx9foDBWkEOD1ixPON9OMBALfm3bEYhEB5zEQZ15/M2f5HMjDgmDff5pQR95vmTS9C12fQ79Cip/WldvMFftXxZsM3dfjTqp2lBDgA5pNhMaDOuTfgVggC91+T7baQo7xStyfqMYI8ciKaHIZHyAeHKR+6L7U68R32Dl8yGs+QYWwM7ktWXnf+fhNUbpaKEUxGy1WzpKafEBhtk99d7A+E0aZgLCza2sp2q2U+F5tf0AadAuteb7DP/CVU9Hc0xlQI1p5MfFoL6EhB5dSUoGeKAcRkn0rQPbyrya1zSg8YlakiearhJDLqriUjRtosO5pFWgPJ+wQ44OLW8a6UFHsD8anHVxqQ09jwYPMk48uTefr8/D8BmZudtuCDYMGLslNoPyfQhn"
+}

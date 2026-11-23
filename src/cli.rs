@@ -95,8 +95,9 @@ pub enum AuthCmd {
         #[arg(long)]
         check: bool,
     },
-    /// Revoke the profile's sign-in at Salve and remove it, then the
-    /// browser profile its --browser sign-in keeps (auth-logout/v1).
+    /// Have Salve forget the profile's sign-in device and revoke the sign-in,
+    /// remove it, then the browser profile its --browser sign-in keeps
+    /// (auth-logout/v1).
     Logout,
     /// Remove every profile's stored sign-in and the vault's key from the
     /// keychain (auth-reset/v1). Asks first; without a terminal it needs

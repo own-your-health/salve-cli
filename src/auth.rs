@@ -31,7 +31,7 @@ use crate::model::{self, MeOnly, PatientAndClinic};
 use crate::pull::Reader;
 use crate::queries;
 use crate::salve::{self, Api};
-use crate::session::{self, Key, Session, SessionStore, KEYCHAIN_SERVICE_ENV};
+use crate::session::{self, Key, Leftover, Session, SessionStore, KEYCHAIN_SERVICE_ENV};
 
 /// Cognito keeps a sign-in waiting on its code about this long.
 pub const CODE_WINDOW_SECS: u64 = 180;
@@ -286,18 +286,65 @@ pub fn login(
         }
         Source::Browser => browser_tokens(profile, &endpoints, cmd.browser.fresh_profile, env.hermetic, quiet)?,
     };
-    let session = read_account(&endpoints, tokens, now, quiet)?;
-    let settings = LoginSettings {
-        clinic_id: Some(session.clinic_id.clone()),
-        clinic: session.clinic_name.clone(),
-        label: Some(label),
+    // Salve's pool tracks devices and renews only for a confirmed one.
+    let device_confirmed = tokens.new_device.as_ref().map(|device| {
+        let done = cognito.confirm_device(&tokens.access_token, device);
+        if let Err(e) = &done {
+            eprintln!(
+                "warning: Salve did not confirm this sign-in's device ({}); the sign-in works for an hour, and its renewal will then be refused",
+                e.message()
+            );
+        }
+        done.is_ok()
+    });
+    let device = tokens
+        .new_device
+        .as_ref()
+        .filter(|_| device_confirmed == Some(true))
+        .map(|d| d.key.clone());
+    let access = Secret::new(tokens.access_token.expose());
+    let refresh = tokens.refresh_token.as_ref().map(|r| Secret::new(r.expose()));
+    // Until the new sign-in is stored, an error ends it at Salve as well, so
+    // nothing of a sign-in salve does not hold stays there.
+    // The entry this sign-in replaces: kept if this one fails, ended at
+    // Salve once this one is stored.
+    let old_key = stored.key(profile);
+    let replaced = old_key.as_ref().and_then(|k| store.get(k).ok().flatten());
+    let stored_new = (|| {
+        let session = read_account(&endpoints, tokens, now, quiet)?;
+        let settings = LoginSettings {
+            clinic_id: Some(session.clinic_id.clone()),
+            clinic: session.clinic_name.clone(),
+            label: Some(label),
+        };
+        let key = settings.key(profile).expect("a clinic id is set");
+        store.put(&key, &session)?;
+        Ok::<_, CliError>((session, settings, key))
+    })();
+    let (session, settings, key) = match stored_new {
+        Ok(stored) => stored,
+        Err(e) => {
+            // A `--browser` sign-in can hand back the stored entry's own
+            // tokens or device: those stay, as the entry does.
+            let ends = match &replaced {
+                Some(kept) => kept.not_shared_with(refresh.as_ref(), device.as_deref()),
+                None => Leftover {
+                    device,
+                    refresh_token: refresh.is_some(),
+                },
+            };
+            end_unstored(&cognito, &access, refresh.as_ref(), ends);
+            return Err(e);
+        }
     };
-    let key = settings.key(profile).expect("a clinic id is set");
-    if let Some(old) = stored.key(profile).filter(|k| *k != key) {
+    if let Some(old) = old_key.filter(|k| *k != key) {
         // The account now reads another clinic: the old entry goes.
         store.delete(&old)?;
     }
-    store.put(&key, &session)?;
+    // The sign-in this one replaces ends at Salve, its device first.
+    if let Some(old) = replaced {
+        end_at_salve(&old, old.not_carried_by(&session), "the replaced sign-in");
+    }
     if !quiet {
         eprintln!(
             "Salve sign-in stored for profile `{profile}` ({})",
@@ -305,9 +352,81 @@ pub fn login(
         );
     }
     if json {
-        output::json(&AuthLogin::stored(true).to_json());
+        output::json(&login_json(device_confirmed));
     }
     Ok(LoggedIn { settings })
+}
+
+/// Ends `ends` of a sign-in salve did not store at Salve: the device it
+/// confirmed, then the sign-in. A failure is a warning.
+fn end_unstored(cognito: &Cognito, access: &Secret, refresh: Option<&Secret>, ends: Leftover) {
+    if let Some(d) = &ends.device {
+        if let Err(e) = cognito.forget_device(access, d) {
+            eprintln!(
+                "warning: Salve still lists the device of a sign-in salve did not store: {}",
+                e.message()
+            );
+        }
+    }
+    if let Some(r) = refresh.filter(|_| ends.refresh_token) {
+        if let Err(e) = cognito.revoke(r) {
+            eprintln!(
+                "warning: Salve still holds a sign-in salve did not store: {}",
+                e.message()
+            );
+        }
+    }
+}
+
+/// What ending a stored sign-in at Salve did; `None` for what was not asked.
+struct Ended {
+    device_forgotten: Option<bool>,
+    revoked: Option<bool>,
+}
+
+/// Ends `ends` of a stored sign-in at Salve: its device first, since
+/// forgetting it takes a live access token, which revoking ends (a lapsed
+/// one is renewed for it), then the sign-in. A failure is a warning naming
+/// `what`.
+fn end_at_salve(s: &Session, ends: Leftover, what: &str) -> Ended {
+    let mut ended = Ended {
+        device_forgotten: None,
+        revoked: None,
+    };
+    if ends.device.is_none() && !ends.refresh_token {
+        return ended;
+    }
+    let cognito = Endpoints::of_session(s.stub.as_deref()).and_then(|ep| Cognito::new(&ep));
+    if let (Ok(c), Some(device)) = (&cognito, ends.device) {
+        let access = if s.lapsing(crate::live::unix_now()) {
+            c.refresh(&s.refresh_token, Some(&device)).map(|t| t.access_token)
+        } else {
+            Ok(Secret::new(s.access_token.expose()))
+        };
+        let done = access.and_then(|a| c.forget_device(&a, &device));
+        if let Err(e) = &done {
+            eprintln!("warning: Salve still lists the device of {what}: {}", e.message());
+        }
+        ended.device_forgotten = Some(done.is_ok());
+    }
+    if ends.refresh_token {
+        let done = cognito.and_then(|c| c.revoke(&s.refresh_token));
+        if let Err(e) = &done {
+            eprintln!("warning: Salve was not told to end {what}: {}", e.message());
+        }
+        ended.revoked = Some(done.is_ok());
+    }
+    ended
+}
+
+/// `auth-login/v1`, with whether Salve confirmed the sign-in's device when
+/// it named one: `false` means the sign-in lasts until its first renewal.
+fn login_json(device_confirmed: Option<bool>) -> Value {
+    let mut v = AuthLogin::stored(true).to_json();
+    if let Some(c) = device_confirmed {
+        v["device_confirmed"] = c.into();
+    }
+    v
 }
 
 /// How long a sign-in waits for Salve to bring the clinic's records in,
@@ -517,6 +636,8 @@ fn browser_tokens(
             access_token: a,
             refresh_token: Some(r),
             expires_in: 3600,
+            // Salve's page confirms its own device; the access token names it.
+            new_device: None,
         }),
         _ => Err(CliError::Upstream(
             "Salve's page keeps its sign-in in a shape salve does not read".into(),
@@ -610,6 +731,8 @@ pub struct LoggedOut {
     pub session_removed: bool,
     /// Whether Salve revoked the sign-in; `None` with none to revoke.
     pub revoked: Option<bool>,
+    /// Whether Salve forgot the sign-in's device; `None` with none to forget.
+    pub device_forgotten: Option<bool>,
     /// `None` when the browser profile was left alone ([`KEYCHAIN_SERVICE_ENV`]).
     pub browser_profile_removed: Option<bool>,
 }
@@ -619,6 +742,9 @@ impl LoggedOut {
         let mut v = json!({ "schema": "auth-logout/v1", "session_removed": self.session_removed });
         if let Some(r) = self.revoked {
             v["revoked_at_salve"] = r.into();
+        }
+        if let Some(f) = self.device_forgotten {
+            v["device_forgotten_at_salve"] = f.into();
         }
         if let Some(removed) = self.browser_profile_removed {
             v["browser_profile_removed"] = removed.into();
@@ -638,7 +764,12 @@ impl LoggedOut {
             Some(false) => "no browser profile was kept".to_string(),
             None => format!("{KEYCHAIN_SERVICE_ENV} is set, so the kept browser profile was left alone"),
         };
-        format!("logged out: {session}; {profile}")
+        let device = match self.device_forgotten {
+            Some(true) => "; Salve forgot its device",
+            Some(false) => "; Salve still lists its device",
+            None => "",
+        };
+        format!("logged out: {session}{device}; {profile}")
     }
 }
 
@@ -669,6 +800,7 @@ pub fn forget_login(
     env: &Env,
 ) -> Result<LoggedOut, CliError> {
     let mut revoked = None;
+    let mut device_forgotten = None;
     let mut removed = false;
     let store: Option<SessionStore> = match settings.key(profile) {
         Some(_) => Some((env.sessions)()?),
@@ -681,13 +813,9 @@ pub fn forget_login(
             Err(e) => return Err(e),
         };
         if let (Some(s), true) = (&session, at_salve) {
-            let done = Endpoints::of_session(s.stub.as_deref())
-                .and_then(|ep| Cognito::new(&ep))
-                .and_then(|c| c.revoke(&s.refresh_token));
-            if let Err(e) = &done {
-                eprintln!("warning: Salve was not told: {}", e.message());
-            }
-            revoked = Some(done.is_ok());
+            let ended = end_at_salve(s, s.whole(), "this sign-in");
+            device_forgotten = ended.device_forgotten;
+            revoked = ended.revoked;
         }
         removed = store.delete(&key)?;
         store.slot(profile).clear()?;
@@ -700,6 +828,7 @@ pub fn forget_login(
     Ok(LoggedOut {
         session_removed: removed,
         revoked,
+        device_forgotten,
         browser_profile_removed: browser,
     })
 }
@@ -731,6 +860,17 @@ pub fn reset(force: bool, interactive: bool, env: &Env, json: bool, quiet: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sign_in_says_whether_salve_confirmed_its_device() {
+        assert_eq!(login_json(Some(false))["device_confirmed"], false);
+        assert_eq!(login_json(Some(true))["device_confirmed"], true);
+        assert!(
+            login_json(None).get("device_confirmed").is_none(),
+            "a pool without devices names none"
+        );
+        assert_eq!(login_json(None)["schema"], "auth-login/v1");
+    }
 
     #[test]
     fn a_refused_codes_message_drops_the_shared_flows_retry_command() {

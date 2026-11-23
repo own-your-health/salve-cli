@@ -91,6 +91,11 @@ pub struct Scenario {
     /// The account answers `AwaitingSync` (HTTP 412, as Salve does) to
     /// this many reads of the patient and clinic, then its records.
     pub sync_after: Option<usize>,
+    /// The pool tracks no devices: a sign-in names none, and a renewal
+    /// needs none. Salve's pool tracks them.
+    pub untracked_devices: bool,
+    /// `ConfirmDevice` is refused.
+    pub confirm_device_fails: bool,
 }
 
 #[derive(Default)]
@@ -117,6 +122,12 @@ struct State {
     mutations: usize,
     /// Reads of the patient and clinic so far.
     account_reads: usize,
+    /// Each refresh token's device, and whether it was confirmed.
+    devices: HashMap<String, (String, bool)>,
+    /// The refresh token each access token was issued under.
+    access: HashMap<String, String>,
+    confirms: usize,
+    forgets: usize,
 }
 
 pub struct Stub {
@@ -171,6 +182,16 @@ impl Stub {
 
     pub fn revokes(&self) -> usize {
         self.state.lock().unwrap().revokes
+    }
+
+    /// Devices confirmed with `ConfirmDevice`.
+    pub fn confirms(&self) -> usize {
+        self.state.lock().unwrap().confirms
+    }
+
+    /// Devices forgotten with `ForgetDevice`.
+    pub fn forgets(&self) -> usize {
+        self.state.lock().unwrap().forgets
     }
 
     pub fn leaks(&self) -> Vec<String> {
@@ -300,6 +321,17 @@ fn id_token(n: usize, exp: u64) -> String {
     format!("{header}.{}.dummy-signature", b64url(claims.to_string().as_bytes()))
 }
 
+/// An access token: a JWT naming the device the sign-in was tracked as,
+/// as Cognito's do (`device_key`) when the pool tracks devices.
+fn access_token(n: usize, exp: u64, device: Option<&str>) -> String {
+    let header = b64url(br#"{"alg":"RS256","kid":"dummy-key"}"#);
+    let mut claims = json!({ "sub": USER_ID, "token_use": "access", "exp": exp, "n": n });
+    if let Some(d) = device {
+        claims["device_key"] = json!(d);
+    }
+    format!("{header}.{}.dummy-signature", b64url(claims.to_string().as_bytes()))
+}
+
 fn verifier(group: &Group) -> BigUint {
     let pool = salve::cognito::pool_name();
     let user_password = srp::hash_hex(format!("{pool}{USER_ID}:{PASSWORD}").as_bytes());
@@ -337,19 +369,34 @@ fn cognito(req: &Request, state: &Mutex<State>, scenario: &Scenario) -> (u16, St
         s.ids.insert(id.clone());
         s.issued_under.insert(id.clone(), refresh.clone());
         s.reads = 0;
+        let device = if scenario.untracked_devices {
+            None
+        } else if with_refresh {
+            let d = format!("eu-west-2_dummy-device-{n}");
+            s.devices.insert(refresh.clone(), (d.clone(), false));
+            Some(d)
+        } else {
+            s.devices.get(&refresh).map(|(d, _)| d.clone())
+        };
+        let access = access_token(n, exp, device.as_deref());
+        s.access.insert(access.clone(), refresh.clone());
         let text = if with_refresh {
             s.refresh.insert(refresh.clone());
             fixture("cognito-tokens.json").replace("{REFRESH}", &refresh)
         } else {
             fixture("cognito-refreshed.json")
         };
-        (
-            200,
-            text.replace("{ID}", &id)
-                .replace("{ACCESS}", &format!("dummy-access-{n}")),
-        )
+        let mut answer: Value = serde_json::from_str(&text.replace("{ID}", &id).replace("{ACCESS}", &access)).unwrap();
+        if let (true, Some(d)) = (with_refresh, device) {
+            answer["AuthenticationResult"]["NewDeviceMetadata"] =
+                json!({ "DeviceGroupKey": format!("-dummyGroup{n}"), "DeviceKey": d });
+        }
+        (200, answer.to_string())
     };
-    if body["ClientId"].as_str() != Some(salve::endpoints::CLIENT_ID) {
+    // ConfirmDevice and ForgetDevice name no client: the access token says
+    // whose device it is.
+    let by_access_token = matches!(action.as_str(), "ConfirmDevice" | "ForgetDevice");
+    if !by_access_token && body["ClientId"].as_str() != Some(salve::endpoints::CLIENT_ID) {
         return (
             400,
             json!({ "__type": "ResourceNotFoundException", "message": "User pool client does not exist." }).to_string(),
@@ -460,8 +507,67 @@ fn cognito(req: &Request, state: &Mutex<State>, scenario: &Scenario) -> (u16, St
             if scenario.refresh_revoked || !held {
                 return err("cognito-refresh-revoked.json");
             }
+            // A tracked pool takes a renewal only for the confirmed device
+            // it was issued to, as Salve's does.
+            let named = body["AuthParameters"]["DEVICE_KEY"].as_str();
+            let device_ok = state
+                .lock()
+                .unwrap()
+                .devices
+                .get(&token)
+                .is_none_or(|(d, confirmed)| *confirmed && named == Some(d.as_str()));
+            if !device_ok {
+                return err("cognito-refresh-invalid.json");
+            }
             state.lock().unwrap().refreshes += 1;
             tokens(false, Some(token))
+        }
+        ("ConfirmDevice", _) => {
+            if scenario.confirm_device_fails {
+                return (
+                    400,
+                    json!({ "__type": "InvalidParameterException", "message": "Invalid device secret verifier." })
+                        .to_string(),
+                );
+            }
+            let base64 = |k: &str| {
+                body["DeviceSecretVerifierConfig"][k]
+                    .as_str()
+                    .and_then(|v| base64::engine::general_purpose::STANDARD.decode(v).ok())
+                    .is_some_and(|b| !b.is_empty())
+            };
+            let mut s = state.lock().unwrap();
+            let refresh = s.access.get(body["AccessToken"].as_str().unwrap_or_default()).cloned();
+            let key = body["DeviceKey"].as_str().unwrap_or_default().to_string();
+            let well_formed = base64("PasswordVerifier") && base64("Salt") && body["DeviceName"].is_string();
+            match refresh.and_then(|r| s.devices.get_mut(&r)) {
+                Some((d, confirmed)) if *d == key && well_formed => {
+                    *confirmed = true;
+                    s.confirms += 1;
+                    (200, json!({ "UserConfirmationNecessary": false }).to_string())
+                }
+                _ => (
+                    400,
+                    json!({ "__type": "ResourceNotFoundException", "message": "Device does not exist." }).to_string(),
+                ),
+            }
+        }
+        ("ForgetDevice", _) => {
+            let mut s = state.lock().unwrap();
+            let refresh = s.access.get(body["AccessToken"].as_str().unwrap_or_default()).cloned();
+            let key = body["DeviceKey"].as_str().unwrap_or_default().to_string();
+            match refresh.and_then(|r| s.devices.get_mut(&r)) {
+                // A forgotten device renews no more, as an unconfirmed one.
+                Some((d, confirmed)) if *d == key => {
+                    *confirmed = false;
+                    s.forgets += 1;
+                    (200, "{}".to_string())
+                }
+                _ => (
+                    400,
+                    json!({ "__type": "ResourceNotFoundException", "message": "Device does not exist." }).to_string(),
+                ),
+            }
         }
         ("RevokeToken", _) => {
             if scenario.revoke_unsupported {

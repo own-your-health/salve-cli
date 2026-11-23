@@ -245,6 +245,41 @@ pub fn decode_hex(hex: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// The verifier `ConfirmDevice` takes for a device, made the way AWS's
+/// reference client makes it (`generateHashDevice`): a random password
+/// hashed with the device's group and key, under a random salt, both
+/// base64. The password is then dropped: salve never signs in as the
+/// device, so the device never stands in for the texted code.
+pub struct DeviceVerifier {
+    pub salt: String,
+    pub verifier: String,
+}
+
+/// A [`DeviceVerifier`] with a fresh random password and salt.
+pub fn device_verifier(group_key: &str, device_key: &str) -> Result<DeviceVerifier, CliError> {
+    let mut password = [0u8; 40];
+    let mut salt = [0u8; 16];
+    getrandom::fill(&mut password)
+        .and_then(|()| getrandom::fill(&mut salt))
+        .map_err(|e| CliError::Other(format!("no randomness for the device: {e}")))?;
+    let password = base64::engine::general_purpose::STANDARD.encode(password);
+    Ok(device_verifier_with(group_key, device_key, &password, &salt))
+}
+
+/// A [`DeviceVerifier`] from a given password and salt.
+pub fn device_verifier_with(group_key: &str, device_key: &str, password: &str, salt: &[u8]) -> DeviceVerifier {
+    let group = Group::new();
+    let hashed = hash_hex(format!("{group_key}{device_key}:{password}").as_bytes());
+    let salt_hex = pad_hex(&BigUint::from_bytes_be(salt));
+    let x = from_hex(&hex_hash(&format!("{salt_hex}{hashed}"))).unwrap_or_default();
+    let verifier = pad_hex(&group.g.modpow(&x, &group.n));
+    let b64 = |hex: &str| base64::engine::general_purpose::STANDARD.encode(decode_hex(hex).unwrap_or_default());
+    DeviceVerifier {
+        salt: b64(&salt_hex),
+        verifier: b64(&verifier),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

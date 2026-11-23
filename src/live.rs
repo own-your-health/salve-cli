@@ -76,7 +76,8 @@ impl<'a> Live<'a> {
         self.renewals.set(self.renewals.get() + 1);
         self.fresh.set(true);
         let refresh = Secret::new(self.session.borrow().refresh_token.expose());
-        let t = self.cognito.refresh(&refresh)?;
+        let device = self.session.borrow().device_key();
+        let t = self.cognito.refresh(&refresh, device.as_deref())?;
         let mut s = self.session.borrow_mut();
         s.renewed(t, (self.now)());
         self.store.put(&self.key, &s)

@@ -71,6 +71,42 @@ impl Session {
             .map(str::to_string)
     }
 
+    /// The device Cognito tracks this sign-in as: the access token's
+    /// `device_key` claim. Salve's pool tracks devices, and refuses a
+    /// renewal that does not name the device ("Invalid Refresh Token").
+    pub fn device_key(&self) -> Option<String> {
+        claims(self.access_token.expose())?["device_key"]
+            .as_str()
+            .map(str::to_string)
+    }
+
+    /// All of this sign-in, to end at Salve.
+    pub fn whole(&self) -> Leftover {
+        Leftover {
+            device: self.device_key(),
+            refresh_token: true,
+        }
+    }
+
+    /// What of this sign-in `next` does not carry on, so ending it at Salve
+    /// leaves `next` working. A `--browser` sign-in from a kept browser
+    /// profile can hand back the same remembered device, or the same
+    /// sign-in.
+    pub fn not_carried_by(&self, next: &Session) -> Leftover {
+        next.not_shared_with(Some(&self.refresh_token), self.device_key().as_deref())
+    }
+
+    /// What of a sign-in holding `refresh_token` and `device` is not this
+    /// one's, so ending it at Salve leaves this one working.
+    pub fn not_shared_with(&self, refresh_token: Option<&Secret>, device: Option<&str>) -> Leftover {
+        Leftover {
+            device: device
+                .filter(|d| self.device_key().as_deref() != Some(*d))
+                .map(str::to_string),
+            refresh_token: refresh_token.is_some_and(|r| r.expose() != self.refresh_token.expose()),
+        }
+    }
+
     /// Whether the tokens lapse within [`RENEW_BEFORE_SECS`].
     pub fn lapsing(&self, now: u64) -> bool {
         self.expires_at <= now + RENEW_BEFORE_SECS
@@ -179,6 +215,14 @@ struct Entry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stub: Option<String>,
     signed_in_at: String,
+}
+
+/// What of a sign-in to end at Salve: its device, if any, and whether its
+/// refresh token.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Leftover {
+    pub device: Option<String>,
+    pub refresh_token: bool,
 }
 
 /// The sessions, one per profile.
@@ -385,6 +429,101 @@ mod tests {
     }
 
     #[test]
+    fn the_device_is_the_access_tokens_device_key() {
+        let mut s = dummy();
+        assert_eq!(s.device_key(), None, "an opaque access token names none");
+        s.access_token = Secret::new(token(&serde_json::json!({ "device_key": "eu-west-2_dummy-device" })));
+        assert_eq!(s.device_key().as_deref(), Some("eu-west-2_dummy-device"));
+        s.access_token = Secret::new(token(&serde_json::json!({ "token_use": "access" })));
+        assert_eq!(s.device_key(), None);
+    }
+
+    #[test]
+    fn a_replaced_sign_in_ends_only_what_the_new_one_does_not_share() {
+        let with = |device: &str, refresh: &str| {
+            let mut s = dummy();
+            s.access_token = Secret::new(token(&serde_json::json!({ "device_key": device })));
+            s.refresh_token = Secret::new(refresh);
+            s
+        };
+        let old = with("eu-west-2_dummy-a", "dummy-refresh-1");
+        assert_eq!(
+            old.not_carried_by(&with("eu-west-2_dummy-b", "dummy-refresh-2")),
+            Leftover {
+                device: Some("eu-west-2_dummy-a".into()),
+                refresh_token: true
+            },
+            "a new device and sign-in: all of the old one ends"
+        );
+        assert_eq!(
+            old.not_carried_by(&with("eu-west-2_dummy-a", "dummy-refresh-2")),
+            Leftover {
+                device: None,
+                refresh_token: true
+            },
+            "the same remembered device stays"
+        );
+        assert_eq!(
+            old.not_carried_by(&with("eu-west-2_dummy-a", "dummy-refresh-1")),
+            Leftover {
+                device: None,
+                refresh_token: false
+            },
+            "the same sign-in handed back: nothing ends"
+        );
+        assert_eq!(
+            old.not_carried_by(&dummy()).device.as_deref(),
+            Some("eu-west-2_dummy-a")
+        );
+        assert_eq!(
+            old.whole(),
+            Leftover {
+                device: Some("eu-west-2_dummy-a".into()),
+                refresh_token: true
+            }
+        );
+    }
+
+    #[test]
+    fn a_failed_sign_in_ends_none_of_the_stored_one() {
+        let mut kept = dummy();
+        kept.access_token = Secret::new(token(&serde_json::json!({ "device_key": "eu-west-2_dummy-a" })));
+        let same = Secret::new("dummy-refresh");
+        let other = Secret::new("dummy-refresh-2");
+        assert_eq!(
+            kept.not_shared_with(Some(&same), None),
+            Leftover {
+                device: None,
+                refresh_token: false
+            },
+            "a browser sign-in that handed back the stored tokens"
+        );
+        assert_eq!(
+            kept.not_shared_with(Some(&other), Some("eu-west-2_dummy-a")),
+            Leftover {
+                device: None,
+                refresh_token: true
+            },
+            "the stored entry's device stays"
+        );
+        assert_eq!(
+            kept.not_shared_with(Some(&other), Some("eu-west-2_dummy-b")),
+            Leftover {
+                device: Some("eu-west-2_dummy-b".into()),
+                refresh_token: true
+            },
+            "a sign-in of its own ends whole"
+        );
+        assert_eq!(
+            kept.not_shared_with(None, None),
+            Leftover {
+                device: None,
+                refresh_token: false
+            }
+        );
+    }
+
+    #[test]
     fn a_blank_service_names_none() {
         assert_eq!(service_override(None), None);
         assert_eq!(service_override(Some("  ")), None);
@@ -405,6 +544,7 @@ mod tests {
             access_token: Secret::new("a"),
             refresh_token: None,
             expires_in: 3600,
+            new_device: None,
         };
         assert_eq!(expiry(&t, 100), 5000);
         let opaque = Tokens {
@@ -412,6 +552,7 @@ mod tests {
             access_token: Secret::new("a"),
             refresh_token: None,
             expires_in: 3600,
+            new_device: None,
         };
         assert_eq!(expiry(&opaque, 100), 3700);
         let mut s = dummy();

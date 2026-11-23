@@ -31,11 +31,15 @@ Report a vulnerability privately through GitHub's "Report a vulnerability"
 - Writes only where asked: `documents download` (owner-only `0600` files,
   never replacing one without `--overwrite`, each checked against what its
   type says it is) and `records export -o` (the stub on this machine only).
-- `auth logout --profile <NAME>` revokes the sign-in at Salve (a failure to
-  is a warning; the sign-in is removed anyway), then removes it, any sign-in
-  waiting on a code, and the Chrome profile. `profiles remove <NAME>` removes
-  the same without contacting Salve, and `auth reset` every sign-in and the
-  vault key. Revocation signs out this sign-in only, not the patient's
+- `auth logout --profile <NAME>` has Salve forget the sign-in's device and
+  revokes the sign-in (a failure of either is a warning; the sign-in is
+  removed anyway), then removes it, any sign-in
+  waiting on a code, and the Chrome profile. `auth login --overwrite` ends
+  the sign-in it replaces at Salve the same way. `profiles remove <NAME>`
+  removes the same without contacting Salve, so the sign-in and its device
+  stay at Salve until the refresh token lapses; run `auth logout` first to
+  end them. `auth reset` removes every sign-in and the vault key the same
+  way, without contacting Salve. Revocation signs out this sign-in only, not the patient's
   phone.
 - The config file holds the profile names and each one's clinic and label.
 
@@ -43,7 +47,11 @@ Report a vulnerability privately through GitHub's "Report a vulnerability"
 
 - Writes to Salve: no message is sent or marked read, no form submitted, no
   document marked read, no setting changed. Salve's mutations are listed in
-  `docs/api.md`; none is ever sent.
+  `docs/api.md`; none is ever sent. The one exception is Cognito's own
+  device record: a sign-in confirms its device (`ConfirmDevice`), as Salve's
+  app does, which adds `salve (command line)` to the account's devices.
+  `auth logout` forgets it (`ForgetDevice`), and so does a sign-in that
+  stores nothing.
 - Sends a record or its contents anywhere but stdout or a file you name.
 - Sends a credential to a host it was not issued for: the ID token goes to
   Salve's APIs and file-link service only, the clinic's token to the patient

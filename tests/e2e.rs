@@ -656,6 +656,10 @@ fn an_account_salve_has_not_finished_setting_up_stores_nothing() {
     );
     assert_eq!(h.run(&["auth", "login", "--profile", "adult1", "--code", CODE]), 3);
     assert_eq!(h.settings("adult1").clinic_id, None);
+    // Nothing of the sign-in stays live at Salve: the device it confirmed
+    // is forgotten and the sign-in revoked.
+    assert_eq!((h.stub.confirms(), h.stub.forgets(), h.stub.revokes()), (1, 1, 1));
+    assert!(!h.stub.holds_sign_in());
 }
 
 #[test]
@@ -790,4 +794,121 @@ fn profiles_and_reset() {
     assert_eq!(h.run(&["auth", "reset"]), 6);
     assert_eq!(h.run(&["auth", "reset", "--force"]), 0);
     assert!(h.store().get(&h.key("adult3")).unwrap().is_none());
+}
+
+/// Salve's pool tracks devices: a sign-in confirms the device it names, as
+/// Salve's web app does, and a renewal names that device. Without both,
+/// Cognito answers "Invalid Refresh Token".
+#[test]
+fn a_sign_in_confirms_its_device_and_a_renewal_names_it() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.stub.confirms(), 1);
+    let bodies: Vec<Value> = h
+        .stub
+        .cognito_bodies()
+        .iter()
+        .map(|b| serde_json::from_str(b).unwrap())
+        .collect();
+    let confirm = bodies
+        .iter()
+        .find(|b| b.get("DeviceSecretVerifierConfig").is_some())
+        .unwrap();
+    let device = confirm["DeviceKey"].as_str().unwrap().to_string();
+    assert!(confirm["AccessToken"].is_string() && confirm["DeviceName"].is_string());
+    let config = confirm["DeviceSecretVerifierConfig"].as_object().unwrap();
+    let mut keys: Vec<&str> = config.keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["PasswordVerifier", "Salt"],
+        "the device's password never leaves salve"
+    );
+    assert_eq!(h.run(&["auth", "status", "--check", "--profile", "adult1"]), 0);
+    assert_eq!(h.stub.refreshes(), 1, "the renewal was taken");
+    let renewal: Value = serde_json::from_str(h.stub.cognito_bodies().last().unwrap()).unwrap();
+    assert_eq!(renewal["AuthParameters"]["DEVICE_KEY"], device.as_str());
+}
+
+/// A pool that tracks no devices: nothing to confirm, and a renewal names
+/// no device.
+#[test]
+fn a_pool_without_devices_renews_without_naming_one() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        untracked_devices: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.stub.confirms(), 0);
+    assert_eq!(h.run(&["auth", "status", "--check", "--profile", "adult1"]), 0);
+    assert_eq!(h.stub.refreshes(), 1);
+    let renewal: Value = serde_json::from_str(h.stub.cognito_bodies().last().unwrap()).unwrap();
+    assert!(renewal["AuthParameters"].get("DEVICE_KEY").is_none());
+}
+
+/// A device Salve would not confirm: the sign-in is still stored (it works
+/// for an hour), and its renewal is then refused, exit 3, as on Salve.
+#[test]
+fn a_device_salve_would_not_confirm_lasts_until_its_first_renewal() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        confirm_device_fails: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.stub.confirms(), 0);
+    let (code, _) = h.export("adult1", "unconfirmed", &[]);
+    assert_eq!(code, 3);
+    assert_eq!(h.stub.refreshes(), 0, "Cognito refused the renewal");
+}
+
+/// `auth logout` removes the device the sign-in confirmed, then revokes the
+/// sign-in: forgetting takes a live access token, which revoking ends.
+#[test]
+fn logout_forgets_the_device_then_revokes_the_sign_in() {
+    let h = H::new(Scenario::default());
+    h.signed_in("adult1");
+    assert_eq!(h.run(&["auth", "logout", "--profile", "adult1"]), 0);
+    assert_eq!((h.stub.forgets(), h.stub.revokes(), h.stub.refreshes()), (1, 1, 0));
+    let log = h.stub.log();
+    let at = |entry: &str| log.iter().position(|l| l.starts_with(entry)).unwrap();
+    assert!(at("cognito ForgetDevice") < at("cognito RevokeToken"));
+    assert!(!h.stub.holds_sign_in());
+}
+
+/// With the access token lapsed, logout renews it once to forget the device.
+#[test]
+fn logout_with_lapsed_tokens_renews_them_to_forget_the_device() {
+    let h = H::new(Scenario {
+        short_tokens: true,
+        ..Scenario::default()
+    });
+    h.signed_in("adult1");
+    assert_eq!(h.run(&["auth", "logout", "--profile", "adult1"]), 0);
+    assert_eq!((h.stub.refreshes(), h.stub.forgets(), h.stub.revokes()), (1, 1, 1));
+}
+
+/// `auth login --overwrite` ends the sign-in it replaces at Salve, its
+/// device first, so each re-sign-in leaves one device listed, not one more.
+#[test]
+fn a_sign_in_that_replaces_another_ends_the_old_one_at_salve() {
+    let h = H::new(Scenario::default());
+    h.signed_in("adult1");
+    let again = [
+        "auth",
+        "login",
+        "--profile",
+        "adult1",
+        "--from-env",
+        SIGN_IN_VAR,
+        "--overwrite",
+    ];
+    assert_eq!(h.run(&again), 3);
+    assert_eq!(h.run(&["auth", "login", "--profile", "adult1", "--code", CODE]), 0);
+    assert_eq!((h.stub.confirms(), h.stub.forgets(), h.stub.revokes()), (2, 1, 1));
+    assert_eq!(h.export("adult1", "after", &[]).0, 0, "the new sign-in reads on");
 }
