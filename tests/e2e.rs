@@ -891,3 +891,24 @@ fn logout_with_lapsed_tokens_renews_them_to_forget_the_device() {
     assert_eq!(h.run(&["auth", "logout", "--profile", "adult1"]), 0);
     assert_eq!((h.stub.refreshes(), h.stub.forgets(), h.stub.revokes()), (1, 1, 1));
 }
+
+/// `auth login --overwrite` ends the sign-in it replaces at Salve, its
+/// device first, so each re-sign-in leaves one device listed, not one more.
+#[test]
+fn a_sign_in_that_replaces_another_ends_the_old_one_at_salve() {
+    let h = H::new(Scenario::default());
+    h.signed_in("adult1");
+    let again = [
+        "auth",
+        "login",
+        "--profile",
+        "adult1",
+        "--from-env",
+        SIGN_IN_VAR,
+        "--overwrite",
+    ];
+    assert_eq!(h.run(&again), 3);
+    assert_eq!(h.run(&["auth", "login", "--profile", "adult1", "--code", CODE]), 0);
+    assert_eq!((h.stub.confirms(), h.stub.forgets(), h.stub.revokes()), (2, 1, 1));
+    assert_eq!(h.export("adult1", "after", &[]).0, 0, "the new sign-in reads on");
+}

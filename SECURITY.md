@@ -34,9 +34,12 @@ Report a vulnerability privately through GitHub's "Report a vulnerability"
 - `auth logout --profile <NAME>` has Salve forget the sign-in's device and
   revokes the sign-in (a failure of either is a warning; the sign-in is
   removed anyway), then removes it, any sign-in
-  waiting on a code, and the Chrome profile. `profiles remove <NAME>` removes
-  the same without contacting Salve, and `auth reset` every sign-in and the
-  vault key. Revocation signs out this sign-in only, not the patient's
+  waiting on a code, and the Chrome profile. `auth login --overwrite` ends
+  the sign-in it replaces at Salve the same way. `profiles remove <NAME>`
+  removes the same without contacting Salve, so the sign-in and its device
+  stay at Salve until the refresh token lapses; run `auth logout` first to
+  end them. `auth reset` removes every sign-in and the vault key the same
+  way, without contacting Salve. Revocation signs out this sign-in only, not the patient's
   phone.
 - The config file holds the profile names and each one's clinic and label.
 

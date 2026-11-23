@@ -297,34 +297,43 @@ pub fn login(
         }
         done.is_ok()
     });
-    let device = tokens.new_device.as_ref().map(|d| d.key.clone());
+    let device = tokens
+        .new_device
+        .as_ref()
+        .filter(|_| device_confirmed == Some(true))
+        .map(|d| d.key.clone());
     let access = Secret::new(tokens.access_token.expose());
     let refresh = tokens.refresh_token.as_ref().map(|r| Secret::new(r.expose()));
-    let session = match read_account(&endpoints, tokens, now, quiet) {
-        Ok(s) => s,
+    // Until the new sign-in is stored, an error ends it at Salve as well, so
+    // nothing of a sign-in salve does not hold stays there.
+    let stored_new = (|| {
+        let session = read_account(&endpoints, tokens, now, quiet)?;
+        let settings = LoginSettings {
+            clinic_id: Some(session.clinic_id.clone()),
+            clinic: session.clinic_name.clone(),
+            label: Some(label),
+        };
+        let key = settings.key(profile).expect("a clinic id is set");
+        let old_key = stored.key(profile);
+        let replaced = old_key.as_ref().and_then(|k| store.get(k).ok().flatten());
+        store.put(&key, &session)?;
+        Ok::<_, CliError>((session, settings, key, old_key, replaced))
+    })();
+    let (session, settings, key, old_key, replaced) = match stored_new {
+        Ok(stored) => stored,
         Err(e) => {
-            // Nothing is stored, so nothing of this sign-in stays at Salve:
-            // its device leaves the account, then the sign-in is revoked.
-            if let (Some(true), Some(d)) = (device_confirmed, &device) {
-                let _ = cognito.forget_device(&access, d);
-            }
-            if let Some(r) = &refresh {
-                let _ = cognito.revoke(r);
-            }
+            end_unstored(&cognito, &access, refresh.as_ref(), device.as_deref());
             return Err(e);
         }
     };
-    let settings = LoginSettings {
-        clinic_id: Some(session.clinic_id.clone()),
-        clinic: session.clinic_name.clone(),
-        label: Some(label),
-    };
-    let key = settings.key(profile).expect("a clinic id is set");
-    if let Some(old) = stored.key(profile).filter(|k| *k != key) {
+    if let Some(old) = old_key.filter(|k| *k != key) {
         // The account now reads another clinic: the old entry goes.
         store.delete(&old)?;
     }
-    store.put(&key, &session)?;
+    // The sign-in this one replaces ends at Salve, its device first.
+    if let Some(old) = replaced {
+        end_at_salve(&old, "the replaced sign-in");
+    }
     if !quiet {
         eprintln!(
             "Salve sign-in stored for profile `{profile}` ({})",
@@ -335,6 +344,62 @@ pub fn login(
         output::json(&login_json(device_confirmed));
     }
     Ok(LoggedIn { settings })
+}
+
+/// Ends at Salve a sign-in salve did not store: the device it confirmed,
+/// then the sign-in. A failure is a warning.
+fn end_unstored(cognito: &Cognito, access: &Secret, refresh: Option<&Secret>, device: Option<&str>) {
+    if let Some(d) = device {
+        if let Err(e) = cognito.forget_device(access, d) {
+            eprintln!(
+                "warning: Salve still lists the device of a sign-in salve did not store: {}",
+                e.message()
+            );
+        }
+    }
+    if let Some(r) = refresh {
+        if let Err(e) = cognito.revoke(r) {
+            eprintln!(
+                "warning: Salve still holds a sign-in salve did not store: {}",
+                e.message()
+            );
+        }
+    }
+}
+
+/// What ending a stored sign-in at Salve did.
+struct Ended {
+    /// `None` when the sign-in names no device.
+    device_forgotten: Option<bool>,
+    revoked: bool,
+}
+
+/// Ends a stored sign-in at Salve: its device first, since forgetting it
+/// takes a live access token, which revoking ends (a lapsed one is renewed
+/// for it), then the sign-in. A failure is a warning naming `what`.
+fn end_at_salve(s: &Session, what: &str) -> Ended {
+    let cognito = Endpoints::of_session(s.stub.as_deref()).and_then(|ep| Cognito::new(&ep));
+    let mut device_forgotten = None;
+    if let (Ok(c), Some(device)) = (&cognito, s.device_key()) {
+        let access = if s.lapsing(crate::live::unix_now()) {
+            c.refresh(&s.refresh_token, Some(&device)).map(|t| t.access_token)
+        } else {
+            Ok(Secret::new(s.access_token.expose()))
+        };
+        let done = access.and_then(|a| c.forget_device(&a, &device));
+        if let Err(e) = &done {
+            eprintln!("warning: Salve still lists the device of {what}: {}", e.message());
+        }
+        device_forgotten = Some(done.is_ok());
+    }
+    let done = cognito.and_then(|c| c.revoke(&s.refresh_token));
+    if let Err(e) = &done {
+        eprintln!("warning: Salve was not told to end {what}: {}", e.message());
+    }
+    Ended {
+        device_forgotten,
+        revoked: done.is_ok(),
+    }
 }
 
 /// `auth-login/v1`, with whether Salve confirmed the sign-in's device when
@@ -731,26 +796,9 @@ pub fn forget_login(
             Err(e) => return Err(e),
         };
         if let (Some(s), true) = (&session, at_salve) {
-            let cognito = Endpoints::of_session(s.stub.as_deref()).and_then(|ep| Cognito::new(&ep));
-            // The device first: forgetting it takes a live access token, which
-            // revoking ends. A lapsed one is renewed for it.
-            if let (Ok(c), Some(device)) = (&cognito, s.device_key()) {
-                let access = if s.lapsing(crate::live::unix_now()) {
-                    c.refresh(&s.refresh_token, Some(&device)).map(|t| t.access_token)
-                } else {
-                    Ok(Secret::new(s.access_token.expose()))
-                };
-                let done = access.and_then(|a| c.forget_device(&a, &device));
-                if let Err(e) = &done {
-                    eprintln!("warning: Salve still lists this sign-in's device: {}", e.message());
-                }
-                device_forgotten = Some(done.is_ok());
-            }
-            let done = cognito.and_then(|c| c.revoke(&s.refresh_token));
-            if let Err(e) = &done {
-                eprintln!("warning: Salve was not told: {}", e.message());
-            }
-            revoked = Some(done.is_ok());
+            let ended = end_at_salve(s, "this sign-in");
+            device_forgotten = ended.device_forgotten;
+            revoked = Some(ended.revoked);
         }
         removed = store.delete(&key)?;
         store.slot(profile).clear()?;
