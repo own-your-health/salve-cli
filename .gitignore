@@ -5,7 +5,7 @@ Cargo.lock.orig
 
 # Never commit real portal data: no downloaded files, report PDFs, portal
 # captures, HAR files or exports. Fixtures are synthetic
-# (tests/fixtures/README.md).
+# (tests/fixtures/salve/README.md).
 /captures
 *.har
 *.raw.json

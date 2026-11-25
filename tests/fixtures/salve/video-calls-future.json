@@ -10,7 +10,7 @@
           "host": "Dr Example",
           "title": "Results review",
           "description": "A video visit with the clinic",
-          "clinictimezone": "America/New_York",
+          "clinictimezone": "Etc/UTC",
           "startdate": "2030-03-01T15:00:00.000Z",
           "enddate": "2030-03-01T15:30:00.000Z",
           "duration": 30,

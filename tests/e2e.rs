@@ -283,18 +283,18 @@ fn sign_in_with_a_texted_code_export_documents_and_sign_out() {
 
     // Forms the patient answered: the finished one final, the started one
     // preliminary, the one never opened left out.
-    let history = find(&stream, "DocumentReference", "form-4001-2");
-    assert_eq!(history["docStatus"], "final");
-    let kept: Value = serde_json::from_slice(&decoded(find(&stream, "Binary", "form-4001-2"))).unwrap();
-    assert_eq!(kept["submission"]["allergies"], "None");
+    let done = find(&stream, "DocumentReference", "form-4107-3");
+    assert_eq!(done["docStatus"], "final");
+    let kept: Value = serde_json::from_slice(&decoded(find(&stream, "Binary", "form-4107-3"))).unwrap();
+    assert_eq!(kept["submission"]["place"], "Example City");
     assert!(kept["definition"]["pages"].is_array());
     assert_eq!(
-        find(&stream, "DocumentReference", "form-4003-1")["docStatus"],
+        find(&stream, "DocumentReference", "form-4105-4")["docStatus"],
         "preliminary"
     );
     assert!(!ids(&stream, "DocumentReference")
         .iter()
-        .any(|i| i.starts_with("form-4002")));
+        .any(|i| i.starts_with("form-4104") || i.starts_with("form-4106")));
 
     // Messages from the newer messaging, both pages; deleted and system
     // messages left out.
@@ -302,7 +302,7 @@ fn sign_in_with_a_texted_code_export_documents_and_sign_out() {
     assert_eq!(comms, ["cmsg-7101", "cmsg-7102", "cmsg-7105"]);
     let asked = find(&stream, "Communication", "cmsg-7101");
     assert_eq!(asked["sender"]["reference"], format!("Patient/{PATIENT_ID}"));
-    assert_eq!(asked["topic"]["text"], "Medication question");
+    assert_eq!(asked["topic"]["text"], "Example question");
     let answered = find(&stream, "Communication", "cmsg-7102");
     assert_eq!(answered["sender"]["display"], "Nurse Example");
     assert_eq!(
@@ -403,7 +403,7 @@ fn since_leaves_out_what_is_dated_before() {
     assert!(!docs.contains(&"doc-2002".to_string()), "{docs:?}");
     assert!(docs.contains(&"doc-2001".to_string()));
     assert!(
-        docs.contains(&"form-4001-2".to_string()),
+        docs.contains(&"form-4107-3".to_string()),
         "forms carry no date and stay"
     );
     assert!(!ids(&stream, "Binary").contains(&"doc-2002".to_string()));
@@ -665,7 +665,7 @@ fn an_account_salve_has_not_finished_setting_up_stores_nothing() {
 #[test]
 fn a_long_conversation_is_read_a_full_page_at_a_time() {
     let h = H::new(Scenario {
-        long_conversation: Some(230),
+        long_conversation: Some(317),
         ..Scenario::default()
     });
     h.signed_in("adult1");
@@ -674,17 +674,18 @@ fn a_long_conversation_is_read_a_full_page_at_a_time() {
     let stream = lines(&out.join("records.ndjson"));
     let trailer = stream.last().unwrap();
     assert_eq!(trailer["complete"], true);
-    assert_eq!(trailer["counts"]["Communication"], 230);
-    // 100, 100, then 30: the short page ends it, and its cursor is not
-    // followed (Salve fails a request past the end).
-    assert_eq!(h.count("patient GetConversationMessages"), 3);
+    assert_eq!(trailer["counts"]["Communication"], 317);
+    // 100 three times, then 17: the short page ends it, and its cursor is
+    // not followed (Salve fails a request past the end). The other
+    // conversation is one request.
+    assert_eq!(h.count("patient GetConversationMessages"), 5);
     assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
 }
 
 #[test]
-fn a_conversation_of_exactly_two_full_pages_ends_on_the_empty_third() {
+fn a_conversation_of_exactly_one_full_page_ends_on_the_empty_second() {
     let h = H::new(Scenario {
-        long_conversation: Some(200),
+        long_conversation: Some(100),
         ..Scenario::default()
     });
     h.signed_in("adult1");
@@ -692,7 +693,8 @@ fn a_conversation_of_exactly_two_full_pages_ends_on_the_empty_third() {
     assert_eq!(code, 0);
     let stream = lines(&out.join("records.ndjson"));
     let trailer = stream.last().unwrap();
-    assert_eq!(trailer["counts"]["Communication"], 200);
+    assert_eq!(trailer["counts"]["Communication"], 100);
+    // A full page, the empty one, and the other conversation's.
     assert_eq!(h.count("patient GetConversationMessages"), 3);
     assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
 }
@@ -700,7 +702,7 @@ fn a_conversation_of_exactly_two_full_pages_ends_on_the_empty_third() {
 #[test]
 fn the_conversation_list_is_read_a_full_page_at_a_time() {
     let h = H::new(Scenario {
-        more_conversations: Some(150),
+        more_conversations: Some(120),
         ..Scenario::default()
     });
     h.signed_in("adult1");
@@ -709,9 +711,9 @@ fn the_conversation_list_is_read_a_full_page_at_a_time() {
     let stream = lines(&out.join("records.ndjson"));
     let trailer = stream.last().unwrap();
     assert_eq!(trailer["counts"]["Communication"], 3);
-    // 151 conversations: a page of 100, then 51.
+    // 122 conversations: a page of 100, then 22.
     assert_eq!(h.count("patient GetConversations"), 2);
-    assert_eq!(h.count("patient GetConversationMessages"), 151);
+    assert_eq!(h.count("patient GetConversationMessages"), 122);
     assert!(skips(trailer).is_empty(), "{:?}", skips(trailer));
 }
 

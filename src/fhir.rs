@@ -517,7 +517,7 @@ mod tests {
         );
         assert_eq!(datetime("0001-01-01T00:00:00Z"), None);
         assert_eq!(datetime("not a date"), None);
-        assert_eq!(day("2025-03-04T23:20:30-05:00").as_deref(), Some("2025-03-04"));
+        assert_eq!(day("2025-03-04T23:20:30-08:00").as_deref(), Some("2025-03-04"));
     }
 
     #[test]

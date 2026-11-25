@@ -94,11 +94,11 @@ fn forms_parse_with_their_answers() {
     selected(&queries::FORMS, "forms.json");
     let f: FormsAnswer = model::read(data("forms.json"), "forms").unwrap();
     let forms = f.me.unwrap().forms;
-    assert_eq!(forms.len(), 3);
+    assert_eq!(forms.len(), 4);
     for s in &forms {
         assert!(s.id.is_some() && s.patientformid.is_some() && s.version.is_some() && s.progress_status.is_some());
     }
-    for name in ["form-4001.json", "form-4003.json"] {
+    for name in ["form-4107.json", "form-4105.json"] {
         selected(&queries::FORM, name);
         let a: FormAnswer = model::read(data(name), name).unwrap();
         let form = a.me.unwrap().form.unwrap();

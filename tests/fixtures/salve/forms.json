@@ -5,33 +5,43 @@
       "forms": [
         {
           "clinicid": "clinic-0001",
-          "id": "form-a",
-          "name": "Medical history",
+          "id": "form-d",
+          "name": "Example welcome survey",
           "nextFormPage": null,
-          "patientformid": 4001,
-          "progressStatus": "Complete",
+          "patientformid": 4104,
+          "progressStatus": "NotStarted",
           "type": "Intake",
+          "version": 1
+        },
+        {
+          "clinicid": "clinic-0001",
+          "id": "form-e",
+          "name": "Example language preference",
+          "nextFormPage": "page3",
+          "patientformid": 4105,
+          "progressStatus": "InProgress",
+          "type": "Consent",
+          "version": 4
+        },
+        {
+          "clinicid": "clinic-0001",
+          "id": "form-f",
+          "name": "Example newsletter choice",
+          "nextFormPage": null,
+          "patientformid": 4106,
+          "progressStatus": "NotStarted",
+          "type": "Consent",
           "version": 2
         },
         {
           "clinicid": "clinic-0001",
-          "id": "form-b",
-          "name": "Consent questions",
+          "id": "form-g",
+          "name": "Example travel plans",
           "nextFormPage": null,
-          "patientformid": 4002,
-          "progressStatus": "NotStarted",
-          "type": "Consent",
-          "version": 1
-        },
-        {
-          "clinicid": "clinic-0001",
-          "id": "form-c",
-          "name": "Partner details",
-          "nextFormPage": "page2",
-          "patientformid": 4003,
-          "progressStatus": "InProgress",
+          "patientformid": 4107,
+          "progressStatus": "Complete",
           "type": "Intake",
-          "version": 1
+          "version": 3
         }
       ]
     }

@@ -7,20 +7,16 @@ web version is a Next.js app at `https://patientwebportal.salvehealth.com`.
 It signs in with Amazon Cognito and reads two GraphQL APIs. salve calls them
 the way the app does.
 
-Everything below was read from the web app's code (build
-`SLwjbRWPWnATD9snq-Tbr`, downloaded 2026-11-19) and from two unauthenticated
-probes of Cognito and the APIs, except where it says otherwise. The first
-real sign-in confirmed the sign-in: the SRP proof, the texted
-code and the tokens, and the app API's `AwaitingSync` answer for an account
-whose clinic had not finished linking it (below). A real export then read
-every list below, and corrected two things the code alone had not shown: the
-form's numbers are integers, and how the message lists page (both in Traps).
+Everything below was read from the web app's code and from two
+unauthenticated probes of Cognito and the APIs, except where it says
+otherwise. The form's numbers are integers, and the message lists page as
+described in Traps.
 `tests/fixture_shapes.rs` pins what salve expects, so a difference shows
 there first.
 
 ## Route
 
-| Question | Answer, 2026-11-19 |
+| Question | Answer |
 | --- | --- |
 | A patient FHIR API (ONC certified, SMART on FHIR) | None. Salve is a patient-engagement app, not an EHR, and publishes no FHIR endpoint, patient API or SMART launch. A clinic's certified EHR, where it has one, is a separate route with its own CLI |
 | A developer program | None public: no documentation, sandbox or sign-up, and no export or data-access feature in the app beyond deleting the account |
@@ -207,8 +203,7 @@ published; a `QuestionnaireResponse` would mean guessing it.
   finished linking the patient. Salve's web app shows a "syncing" page that
   reads `GetPatientAndClinic` every 2 seconds until the clinic is there, and
   sends nothing to start the sync. A sign-in reads it every 3 seconds for up
-  to 3 minutes the same way, then stops and keeps nothing. On the first real
-  sign-in it did not clear in those 3 minutes.
+  to 3 minutes the same way, then stops and keeps nothing.
 - **A list comes whole without a limit, and its cursor then points past the
   end.** `conversations` and `conversationMessages` answer every page with a
   cursor, and the cursor from a page asked for without a limit fails when
@@ -224,7 +219,7 @@ published; a `QuestionnaireResponse` would mean guessing it.
   carries `NewDeviceMetadata: {DeviceKey, DeviceGroupKey}`, and each access
   token names the device (`device_key`). A renewal is refused with
   `NotAuthorizedException` "Invalid Refresh Token." unless it names the
-  device and the device was confirmed first. Real sign-ins confirmed this.
+  device and the device was confirmed first.
   A renewal naming no device is refused. So is one naming the device before
   `ConfirmDevice`. One naming it after `ConfirmDevice` is taken. salve
   confirms the device the way AWS's reference client does
