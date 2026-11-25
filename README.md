@@ -195,9 +195,9 @@ against Salve it is exit 2, and real records go straight into medrec.
 
 `make verify` runs fmt-check, clippy, the tests and the smoke test. The
 tests are offline: a stub Salve on 127.0.0.1 checks the SRP proof as
-Cognito does and answers from synthetic fixtures (`tests/fixtures/README.md`),
-and sign-ins live in an in-memory vault. See `AGENTS.md` and
-`CONTRIBUTING.md`.
+Cognito does and answers from synthetic fixtures
+(`tests/fixtures/salve/README.md`), and sign-ins live in an in-memory vault.
+See `AGENTS.md` and `CONTRIBUTING.md`.
 
 To try salve by hand on synthetic data, run the same stub as a process and
 point salve at it and at a scratch vault:

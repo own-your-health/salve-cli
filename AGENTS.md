@@ -36,7 +36,7 @@ These come from the household's plan and are not negotiable.
 
 - The repository carries no personal data, in code, fixtures, docs, commits,
   pull requests or issues: no names, clinics the household uses, ids or real
-  answers. Fixtures are synthetic (`tests/fixtures/README.md`);
+  answers. Fixtures are synthetic (`tests/fixtures/salve/README.md`);
   `tests/no_personal_data.rs` scans every tracked file and checks every
   identity field in the fixtures against its dummy value.
 - Records and their contents are never sent to an outside service: no

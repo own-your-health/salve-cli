@@ -5,7 +5,7 @@
 //! addresses) rather than a list of real values, which would publish what
 //! it exists to keep out. Then checks the fixtures positively: every
 //! identity-bearing field Salve answers holds one of the dummy shapes
-//! `tests/fixtures/README.md` lists.
+//! `tests/fixtures/salve/README.md` lists.
 
 use std::process::Command;
 
