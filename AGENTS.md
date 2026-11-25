@@ -41,11 +41,10 @@ These come from the household's plan and are not negotiable.
   identity field in the fixtures against its dummy value.
 - Records and their contents are never sent to an outside service: no
   health-data aggregator, cloud OCR or other company's API. A Claude session
-  is not one of these (the household's decision, 2026-11-17). A session may
-  read the household's real records when the work needs it; real data stays
-  out of tracked files, commits, pull requests and issues, and out of
-  messages to other sessions unless they need it. A raw capture is deleted
-  from `/tmp` once it has served.
+  is not one of these. A session may read records
+  when the work needs it; real data stays out of tracked files, commits, pull
+  requests and issues, and out of messages to other sessions unless they need
+  it. A raw capture is deleted from `/tmp` once it has served.
 - `records export -o DIR` is refused for Salve itself (only the stub on this
   machine may write a file); real records go straight into medrec through a
   pipe.

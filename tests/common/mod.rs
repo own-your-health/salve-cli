@@ -674,8 +674,8 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
         // FormInput takes integers; a string is refused, as Salve does.
         ("app", "GetForm") if vars["input"]["patientformid"].is_string() => (400, fixture("form-input-not-int.json")),
         ("app", "GetForm") => match vars["input"]["patientformid"].as_i64() {
-            Some(4001) => ok("form-4001.json"),
-            Some(4003) => ok("form-4003.json"),
+            Some(4105) => ok("form-4105.json"),
+            Some(4107) => ok("form-4107.json"),
             _ => ok("form-not-found.json"),
         },
         ("app", "GetVideoCalls") => {
@@ -743,9 +743,9 @@ fn graphql(req: &Request, host: &str, state: &Mutex<State>, scenario: &Scenario)
             }
         }
         ("patient", "GetConversationMessages")
-            if vars["conversationId"]
-                .as_i64()
-                .is_some_and(|id| (7500..7500 + scenario.more_conversations.unwrap_or(0) as i64).contains(&id)) =>
+            if vars["conversationId"].as_i64().is_some_and(|id| {
+                id == 7002 || (7500..7500 + scenario.more_conversations.unwrap_or(0) as i64).contains(&id)
+            }) =>
         {
             match page(Vec::new(), vars, "messages") {
                 Some(answer) => (200, json!({ "data": { "conversationMessages": answer } }).to_string()),

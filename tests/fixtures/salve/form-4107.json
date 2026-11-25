@@ -1,0 +1,54 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "form": {
+        "id": "form-g",
+        "clinicid": "clinic-0001",
+        "patientformid": 4107,
+        "version": 3,
+        "name": "Example travel plans",
+        "type": "Intake",
+        "definition": {
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "boolean",
+                  "name": "traveling",
+                  "title": "Are you traveling?"
+                }
+              ]
+            },
+            {
+              "name": "page2",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "place",
+                  "title": "Where to?"
+                },
+                {
+                  "type": "text",
+                  "name": "note",
+                  "title": "Anything else?"
+                }
+              ]
+            }
+          ]
+        },
+        "latestsubmission": {
+          "id": "sub-4107",
+          "version": 3,
+          "submission": {
+            "traveling": true,
+            "place": "Example City",
+            "note": "Example note"
+          },
+          "issubmitted": true
+        }
+      }
+    }
+  }
+}

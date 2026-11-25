@@ -1,0 +1,58 @@
+{
+  "data": {
+    "me": {
+      "patientid": "100001",
+      "form": {
+        "id": "form-e",
+        "clinicid": "clinic-0001",
+        "patientformid": 4105,
+        "version": 4,
+        "name": "Example language preference",
+        "type": "Consent",
+        "definition": {
+          "pages": [
+            {
+              "name": "page1",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "language",
+                  "title": "Which language?"
+                }
+              ]
+            },
+            {
+              "name": "page2",
+              "elements": [
+                {
+                  "type": "boolean",
+                  "name": "interpreter",
+                  "title": "An interpreter?"
+                }
+              ]
+            },
+            {
+              "name": "page3",
+              "elements": [
+                {
+                  "type": "text",
+                  "name": "comment",
+                  "title": "Comments"
+                }
+              ]
+            }
+          ]
+        },
+        "latestsubmission": {
+          "id": "sub-4105",
+          "version": 4,
+          "submission": {
+            "language": "Example",
+            "interpreter": false
+          },
+          "issubmitted": false
+        }
+      }
+    }
+  }
+}

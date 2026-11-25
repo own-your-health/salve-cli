@@ -5,7 +5,18 @@
       "records": [
         {
           "id": 7001,
-          "subject": "Medication question",
+          "subject": "Example question",
+          "isStarred": true,
+          "conversationStatus": "Open",
+          "conversationType": "Nursing",
+          "conversationFolder": {
+            "id": "1",
+            "name": "Inbox"
+          }
+        },
+        {
+          "id": 7002,
+          "subject": "Example schedule",
           "isStarred": false,
           "conversationStatus": "Open",
           "conversationType": "Nursing",

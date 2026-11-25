@@ -3,9 +3,9 @@
 1. `make verify` must pass: fmt-check, clippy with warnings denied, the
    tests, the smoke test.
 2. Fixtures are synthetic. A new answer shape becomes a file in
-   `tests/fixtures/salve/` with the real answer's keys and types and
-   invented values from `tests/fixtures/README.md`, never a copy of a real
-   answer.
+   `tests/fixtures/salve/`. Field names, types, codes and statuses follow the
+   site; everything else is invented (which items, how many, their order,
+   dates, amounts and text), never a copy of a real answer.
 3. No personal data anywhere: code, docs, commit messages, pull requests,
    issues. `tests/no_personal_data.rs` enforces the shapes; review the rest.
 4. A new query comes with its entry in `docs/api.md`, a fixture, and the
